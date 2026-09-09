@@ -2,10 +2,12 @@ using FluentValidation;
 using HospitalManagement.Business.DTOs.Common;
 using HospitalManagement.Business.DTOs.MedicalRecord;
 using HospitalManagement.Business.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/medical-records")]
 public class MedicalRecordsController : ControllerBase

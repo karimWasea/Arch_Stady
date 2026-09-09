@@ -155,5 +155,41 @@ public static class DbInitializer
 
         context.Appointments.AddRange(appointments);
         await context.SaveChangesAsync();
+
+        // 5. Seed Default Users (Admin and Doctor)
+        using var hmacAdmin = new System.Security.Cryptography.HMACSHA512();
+        var adminSalt = hmacAdmin.Key;
+        var adminHash = hmacAdmin.ComputeHash(System.Text.Encoding.UTF8.GetBytes("Admin123!"));
+
+        using var hmacDoctor = new System.Security.Cryptography.HMACSHA512();
+        var doctorSalt = hmacDoctor.Key;
+        var doctorHash = hmacDoctor.ComputeHash(System.Text.Encoding.UTF8.GetBytes("Doctor123!"));
+
+        var users = new List<User>
+        {
+            new User
+            {
+                Username = "admin",
+                Email = "admin@hospital.org",
+                FullName = "System Administrator",
+                Role = UserRole.Admin,
+                PasswordHash = adminHash,
+                PasswordSalt = adminSalt,
+                CreatedAt = DateTime.UtcNow
+            },
+            new User
+            {
+                Username = "dr.jenkins",
+                Email = "s.jenkins@hospital.org",
+                FullName = "Dr. Sarah Jenkins",
+                Role = UserRole.Doctor,
+                PasswordHash = doctorHash,
+                PasswordSalt = doctorSalt,
+                CreatedAt = DateTime.UtcNow
+            }
+        };
+
+        context.Users.AddRange(users);
+        await context.SaveChangesAsync();
     }
 }

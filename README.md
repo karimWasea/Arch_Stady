@@ -143,6 +143,38 @@ All endpoints return a uniform envelope:
 
 ---
 
+## 🔐 2. Authentication & Authorization
+
+The system implements **JWT Bearer Authentication** and **Role-Based Access Control**:
+- **Roles**: `Admin`, `Doctor`, `Staff`
+- **Security**: Salted HMAC-SHA512 password hashing & signed JWT tokens.
+- **Default Credentials**:
+  - Admin: `admin` or `admin@hospital.org` / `Admin123!`
+  - Doctor: `dr.jenkins` or `s.jenkins@hospital.org` / `Doctor123!`
+
+### Auth Endpoints:
+- `POST /api/auth/login` (Public)
+- `POST /api/auth/register` (Public)
+- `GET /api/auth/me` (`[Authorize]`)
+
+Protected endpoints (`/api/patients`, `/api/doctors`, `/api/appointments`, `/api/prescriptions`) require the `Authorization: Bearer <token>` header.
+
+---
+
+## 💻 3. Angular SPA Frontend (`hospital-ui`)
+
+A standalone-component Angular application styled with modern CSS:
+- **Auth Guard**: Protects `/dashboard`, `/patients`, `/doctors`, and `/appointments`.
+- **JWT Interceptor**: Automatically attaches Bearer token to all outbound requests and handles 401 expiration.
+- **Demo Quick-Login**: Single-click buttons for Admin and Doctor roles.
+- **Features**:
+  - **Dashboard**: KPI metric cards and upcoming appointments.
+  - **Patients Directory**: Searchable patient table and registration modal.
+  - **Doctors Directory**: Clinical specialists list with contact details.
+  - **Appointments Manager**: Booking modal, filters, and Complete/Cancel action buttons.
+
+---
+
 ## 🧪 4. Running the Tests
 
 Execute the xUnit test suite from the repository root:
@@ -151,27 +183,23 @@ Execute the xUnit test suite from the repository root:
 dotnet test
 ```
 
-All 12 business and architectural unit tests validate without requiring an external database:
-- ✅ Create patient
-- ✅ Create doctor with valid department
-- ✅ Doctor must belong to existing department (throws `NotFoundException`)
-- ✅ Prevent duplicate doctor appointment at same time (throws `ConflictException`)
-- ✅ Prevent duplicate patient appointment at same time (throws `ConflictException`)
-- ✅ Cancel appointment
-- ✅ Complete appointment when scheduled
-- ✅ Prevent completing cancelled appointment (throws `BusinessRuleException`)
-- ✅ Create medical record with valid references
-- ✅ Prevent medical record with non-existent patient
-- ✅ Prescription requires at least one item
-- ✅ Prescription with valid items persists correctly
+All 16 business and authentication unit tests pass in under 1 second without external database dependencies.
 
 ---
 
-## 🚀 5. Running the API
+## 🚀 5. How to Run Locally
 
+### Step 1: Start Backend Web API
 ```bash
 cd HospitalManagement.API
 dotnet run
 ```
+API runs on `http://localhost:5087` and `https://localhost:7159` with Swagger UI at the root.
 
-Swagger UI opens automatically at `http://localhost:<port>/` or `https://localhost:<port>/` with pre-seeded departments, doctors, patients, and appointments ready to test immediately.
+### Step 2: Start Angular Frontend
+```bash
+cd hospital-ui
+npm install
+npm start
+```
+Frontend opens at `http://localhost:4200` with hot reload. Sign in with `admin` / `Admin123!` or `dr.jenkins` / `Doctor123!`.

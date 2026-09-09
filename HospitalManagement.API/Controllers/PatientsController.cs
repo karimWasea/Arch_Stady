@@ -2,10 +2,12 @@ using FluentValidation;
 using HospitalManagement.Business.DTOs.Common;
 using HospitalManagement.Business.DTOs.Patient;
 using HospitalManagement.Business.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class PatientsController : ControllerBase

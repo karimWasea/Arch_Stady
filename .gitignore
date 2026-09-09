@@ -20,3 +20,8 @@ Thumbs.db
 TestResults/
 *.trx
 *.coverage
+
+## Node & Frontend
+node_modules/
+dist/
+.angular/

@@ -1,0 +1,22 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+
+## OS generated
+.DS_Store
+Thumbs.db
+
+## Test results
+TestResults/
+*.trx
+*.coverage

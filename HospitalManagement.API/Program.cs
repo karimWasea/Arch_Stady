@@ -127,8 +127,13 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Hospital Management API v1");
-    c.RoutePrefix = string.Empty;
+    c.RoutePrefix = "swagger"; // Available at /swagger
 });
+
+// Redirect root / to /swagger
+app.MapGet("/", () => Results.Redirect("/swagger"));
+// Fallback redirect from legacy weatherforecast
+app.MapGet("/weatherforecast", () => Results.Redirect("/swagger"));
 
 app.UseHttpsRedirection();
 

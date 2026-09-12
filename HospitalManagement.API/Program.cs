@@ -156,14 +156,13 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        // Use MigrateAsync when migrations exist instead of EnsureCreatedAsync
         await context.Database.MigrateAsync();
         await DbInitializer.SeedAsync(context);
         logger.LogInformation("Database migrated and seeded successfully.");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while migrating/seeding the database on startup: {Message}", ex.Message);
+        logger.LogWarning("Notice during database initialization: {Message}. The API will continue running.", ex.Message);
     }
 }
 

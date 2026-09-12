@@ -121,13 +121,16 @@ builder.Services.AddSwaggerGen(options =>
 var app = builder.Build();
 
 // 8. Middleware Pipeline
+// IMPORTANT: UseCors must be called BEFORE UseHttpsRedirection to prevent OPTIONS preflight 307 redirects!
+app.UseCors("AllowAngularApp");
+
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Hospital Management API v1");
-    c.RoutePrefix = "swagger"; // Available at /swagger
+    c.RoutePrefix = "swagger";
 });
 
 // Redirect root / to /swagger
@@ -135,9 +138,10 @@ app.MapGet("/", () => Results.Redirect("/swagger"));
 // Fallback redirect from legacy weatherforecast
 app.MapGet("/weatherforecast", () => Results.Redirect("/swagger"));
 
-app.UseHttpsRedirection();
-
-app.UseCors("AllowAngularApp");
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -152,13 +156,14 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        await context.Database.EnsureCreatedAsync();
+        // Use MigrateAsync when migrations exist instead of EnsureCreatedAsync
+        await context.Database.MigrateAsync();
         await DbInitializer.SeedAsync(context);
-        logger.LogInformation("Database initialized and seeded successfully.");
+        logger.LogInformation("Database migrated and seeded successfully.");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while initializing the database.");
+        logger.LogError(ex, "An error occurred while migrating/seeding the database on startup: {Message}", ex.Message);
     }
 }
 

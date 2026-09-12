@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HospitalManagement.DataAccess\HospitalManagement.DataAccess.csproj" />
-    <ProjectReference Include="..\HospitalManagement.Entities\HospitalManagement.Entities.csproj" />
   </ItemGroup>
 
   <ItemGroup>

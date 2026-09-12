@@ -122,7 +122,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer"
     });
 
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    options.AddSecurityRequirement(new  OpenApiSecurityRequirement
     {
         {
             new OpenApiSecurityScheme

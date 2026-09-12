@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
-    <ProjectReference Include="..\HospitalManagement.Business\HospitalManagement.Business.csproj" />
-    <ProjectReference Include="..\HospitalManagement.DataAccess\HospitalManagement.DataAccess.csproj" />
-    <ProjectReference Include="..\HospitalManagement.Entities\HospitalManagement.Entities.csproj" />
+    <ProjectReference Include="..\HospitalManagement.Core\HospitalManagement.Core.csproj" />
+    <ProjectReference Include="..\HospitalManagement.Adapters.Persistence\HospitalManagement.Adapters.Persistence.csproj" />
+    <ProjectReference Include="..\HospitalManagement.Adapters.Caching.Redis\HospitalManagement.Adapters.Caching.Redis.csproj" />
+    <ProjectReference Include="..\HospitalManagement.Adapters.Notifications.Email\HospitalManagement.Adapters.Notifications.Email.csproj" />
   </ItemGroup>
 
   <ItemGroup>

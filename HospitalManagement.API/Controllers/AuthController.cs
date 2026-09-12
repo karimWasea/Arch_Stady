@@ -1,27 +1,31 @@
 using System.Security.Claims;
 using FluentValidation;
-using HospitalManagement.Business.DTOs.Auth;
-using HospitalManagement.Business.DTOs.Common;
-using HospitalManagement.Business.Interfaces;
+using HospitalManagement.Core.DTOs.Auth;
+using HospitalManagement.Core.DTOs.Common;
+using HospitalManagement.Core.Ports.Inbound;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.API.Controllers;
 
+/// <summary>
+/// Primary (Driving) Adapter for Authentication.
+/// Invokes Inbound Port (IAuthUseCases).
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly IAuthService _authService;
+    private readonly IAuthUseCases _authUseCases;
     private readonly IValidator<LoginRequestDto> _loginValidator;
     private readonly IValidator<RegisterRequestDto> _registerValidator;
 
     public AuthController(
-        IAuthService authService,
+        IAuthUseCases authUseCases,
         IValidator<LoginRequestDto> loginValidator,
         IValidator<RegisterRequestDto> registerValidator)
     {
-        _authService = authService;
+        _authUseCases = authUseCases;
         _loginValidator = loginValidator;
         _registerValidator = registerValidator;
     }
@@ -38,7 +42,7 @@ public class AuthController : ControllerBase
             throw new ValidationException(validationResult.Errors);
         }
 
-        var response = await _authService.LoginAsync(dto);
+        var response = await _authUseCases.LoginAsync(dto);
         return Ok(ApiResponse<AuthResponseDto>.Ok(response, "Login successful."));
     }
 
@@ -55,7 +59,7 @@ public class AuthController : ControllerBase
             throw new ValidationException(validationResult.Errors);
         }
 
-        var response = await _authService.RegisterAsync(dto);
+        var response = await _authUseCases.RegisterAsync(dto);
         return StatusCode(StatusCodes.Status201Created, ApiResponse<AuthResponseDto>.Ok(response, "User registered successfully."));
     }
 
@@ -72,7 +76,7 @@ public class AuthController : ControllerBase
             return Unauthorized(ApiResponse.Fail("Invalid authentication token claims."));
         }
 
-        var user = await _authService.GetCurrentUserAsync(userId);
+        var user = await _authUseCases.GetCurrentUserAsync(userId);
         return Ok(ApiResponse<UserDto>.Ok(user));
     }
 }

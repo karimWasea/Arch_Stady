@@ -1,23 +1,27 @@
 using FluentValidation;
-using HospitalManagement.Business.DTOs.Common;
-using HospitalManagement.Business.DTOs.MedicalRecord;
-using HospitalManagement.Business.Interfaces;
+using HospitalManagement.Core.DTOs.Common;
+using HospitalManagement.Core.DTOs.MedicalRecord;
+using HospitalManagement.Core.Ports.Inbound;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.API.Controllers;
 
+/// <summary>
+/// Primary (Driving) Adapter for Medical Records.
+/// Invokes Inbound Port (IMedicalRecordUseCases).
+/// </summary>
 [Authorize]
 [ApiController]
-[Route("api/medical-records")]
+[Route("api/[controller]")]
 public class MedicalRecordsController : ControllerBase
 {
-    private readonly IMedicalRecordService _medicalRecordService;
+    private readonly IMedicalRecordUseCases _medicalRecordUseCases;
     private readonly IValidator<CreateMedicalRecordDto> _validator;
 
-    public MedicalRecordsController(IMedicalRecordService medicalRecordService, IValidator<CreateMedicalRecordDto> validator)
+    public MedicalRecordsController(IMedicalRecordUseCases medicalRecordUseCases, IValidator<CreateMedicalRecordDto> validator)
     {
-        _medicalRecordService = medicalRecordService;
+        _medicalRecordUseCases = medicalRecordUseCases;
         _validator = validator;
     }
 
@@ -25,7 +29,16 @@ public class MedicalRecordsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<IEnumerable<MedicalRecordDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll()
     {
-        var records = await _medicalRecordService.GetAllAsync();
+        var records = await _medicalRecordUseCases.GetAllAsync();
+        return Ok(ApiResponse<IEnumerable<MedicalRecordDto>>.Ok(records));
+    }
+
+    [HttpGet("patient/{patientId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<IEnumerable<MedicalRecordDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetByPatientId(int patientId)
+    {
+        var records = await _medicalRecordUseCases.GetByPatientIdAsync(patientId);
         return Ok(ApiResponse<IEnumerable<MedicalRecordDto>>.Ok(records));
     }
 
@@ -34,14 +47,13 @@ public class MedicalRecordsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(int id)
     {
-        var record = await _medicalRecordService.GetByIdAsync(id);
+        var record = await _medicalRecordUseCases.GetByIdAsync(id);
         return Ok(ApiResponse<MedicalRecordDto>.Ok(record));
     }
 
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<MedicalRecordDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create([FromBody] CreateMedicalRecordDto dto)
     {
         var validationResult = await _validator.ValidateAsync(dto);
@@ -50,7 +62,7 @@ public class MedicalRecordsController : ControllerBase
             throw new ValidationException(validationResult.Errors);
         }
 
-        var created = await _medicalRecordService.CreateAsync(dto);
+        var created = await _medicalRecordUseCases.CreateAsync(dto);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, ApiResponse<MedicalRecordDto>.Ok(created, "Medical record created successfully."));
     }
 
@@ -59,16 +71,7 @@ public class MedicalRecordsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateMedicalRecordDto dto)
     {
-        var updated = await _medicalRecordService.UpdateAsync(id, dto);
+        var updated = await _medicalRecordUseCases.UpdateAsync(id, dto);
         return Ok(ApiResponse<MedicalRecordDto>.Ok(updated, "Medical record updated successfully."));
-    }
-
-    [HttpDelete("{id:int}")]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(int id)
-    {
-        await _medicalRecordService.DeleteAsync(id);
-        return Ok(ApiResponse.Ok("Medical record deleted successfully."));
     }
 }

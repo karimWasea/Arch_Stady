@@ -1,23 +1,27 @@
 using FluentValidation;
-using HospitalManagement.Business.DTOs.Common;
-using HospitalManagement.Business.DTOs.Prescription;
-using HospitalManagement.Business.Interfaces;
+using HospitalManagement.Core.DTOs.Common;
+using HospitalManagement.Core.DTOs.Prescription;
+using HospitalManagement.Core.Ports.Inbound;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.API.Controllers;
 
+/// <summary>
+/// Primary (Driving) Adapter for Prescriptions.
+/// Invokes Inbound Port (IPrescriptionUseCases).
+/// </summary>
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class PrescriptionsController : ControllerBase
 {
-    private readonly IPrescriptionService _prescriptionService;
+    private readonly IPrescriptionUseCases _prescriptionUseCases;
     private readonly IValidator<CreatePrescriptionDto> _validator;
 
-    public PrescriptionsController(IPrescriptionService prescriptionService, IValidator<CreatePrescriptionDto> validator)
+    public PrescriptionsController(IPrescriptionUseCases prescriptionUseCases, IValidator<CreatePrescriptionDto> validator)
     {
-        _prescriptionService = prescriptionService;
+        _prescriptionUseCases = prescriptionUseCases;
         _validator = validator;
     }
 
@@ -25,7 +29,16 @@ public class PrescriptionsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<IEnumerable<PrescriptionDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll()
     {
-        var prescriptions = await _prescriptionService.GetAllAsync();
+        var prescriptions = await _prescriptionUseCases.GetAllAsync();
+        return Ok(ApiResponse<IEnumerable<PrescriptionDto>>.Ok(prescriptions));
+    }
+
+    [HttpGet("patient/{patientId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<IEnumerable<PrescriptionDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetByPatientId(int patientId)
+    {
+        var prescriptions = await _prescriptionUseCases.GetByPatientIdAsync(patientId);
         return Ok(ApiResponse<IEnumerable<PrescriptionDto>>.Ok(prescriptions));
     }
 
@@ -34,14 +47,13 @@ public class PrescriptionsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(int id)
     {
-        var prescription = await _prescriptionService.GetByIdAsync(id);
+        var prescription = await _prescriptionUseCases.GetByIdAsync(id);
         return Ok(ApiResponse<PrescriptionDto>.Ok(prescription));
     }
 
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<PrescriptionDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create([FromBody] CreatePrescriptionDto dto)
     {
         var validationResult = await _validator.ValidateAsync(dto);
@@ -50,7 +62,7 @@ public class PrescriptionsController : ControllerBase
             throw new ValidationException(validationResult.Errors);
         }
 
-        var created = await _prescriptionService.CreateAsync(dto);
+        var created = await _prescriptionUseCases.CreateAsync(dto);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, ApiResponse<PrescriptionDto>.Ok(created, "Prescription created successfully."));
     }
 
@@ -59,16 +71,7 @@ public class PrescriptionsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdatePrescriptionDto dto)
     {
-        var updated = await _prescriptionService.UpdateAsync(id, dto);
+        var updated = await _prescriptionUseCases.UpdateAsync(id, dto);
         return Ok(ApiResponse<PrescriptionDto>.Ok(updated, "Prescription updated successfully."));
-    }
-
-    [HttpDelete("{id:int}")]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(int id)
-    {
-        await _prescriptionService.DeleteAsync(id);
-        return Ok(ApiResponse.Ok("Prescription deleted successfully."));
     }
 }

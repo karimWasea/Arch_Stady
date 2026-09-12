@@ -1,8 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentValidation;
-using HospitalManagement.Business.DTOs.Common;
-using HospitalManagement.Business.Exceptions;
+using HospitalManagement.Core.DTOs.Common;
+using HospitalManagement.Core.Exceptions;
 
 namespace HospitalManagement.API.Middleware;
 
@@ -58,7 +58,7 @@ public class ExceptionHandlingMiddleware
 
             default:
                 _logger.LogError(exception, "Unhandled exception: {Message}", exception.Message);
-                message = exception.Message; // Helpful for development
+                message = exception.Message;
                 break;
         }
 

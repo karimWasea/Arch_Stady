@@ -1,12 +1,15 @@
 using System.Text;
 using FluentValidation;
+using HospitalManagement.Adapters.Caching.Redis;
+using HospitalManagement.Adapters.Notifications.Email;
+using HospitalManagement.Adapters.Persistence;
+using HospitalManagement.Adapters.Persistence.Context;
+using HospitalManagement.Adapters.Persistence.Data;
 using HospitalManagement.API.Middleware;
-using HospitalManagement.Business.Interfaces;
-using HospitalManagement.Business.Security;
-using HospitalManagement.Business.Services;
-using HospitalManagement.Business.Validators;
-using HospitalManagement.DataAccess.Context;
-using HospitalManagement.DataAccess.Data;
+using HospitalManagement.Core.Ports.Inbound;
+using HospitalManagement.Core.Security;
+using HospitalManagement.Core.UseCases;
+using HospitalManagement.Core.Validators;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -14,16 +17,43 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Database Connection
+// ==============================================================================
+// 1. DRIVEN (SECONDARY) ADAPTERS CONFIGURATION
+// ==============================================================================
+
+// Persistence Adapter (EF Core + SQL Server)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? "Server=(localdb)\\mssqllocaldb;Database=HospitalManagementDb;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True";
+builder.Services.AddPersistenceAdapter(connectionString);
 
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-{
-    options.UseSqlServer(connectionString);
-});
+// Caching Adapter (Redis with resilient in-memory fallback)
+builder.Services.AddRedisCacheAdapter();
 
-// 2. JWT Configuration & Authentication
+// Notifications Adapter (Email with responsive HTML & console preview)
+builder.Services.AddEmailNotificationAdapter(builder.Configuration);
+
+// ==============================================================================
+// 2. CORE SERVICES & INBOUND (PRIMARY) USE CASES DI
+// ==============================================================================
+builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();
+builder.Services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
+
+// Register Inbound Ports (Driving Use Cases)
+builder.Services.AddScoped<IAppointmentUseCases, AppointmentUseCases>();
+builder.Services.AddScoped<IPatientUseCases, PatientUseCases>();
+builder.Services.AddScoped<IDoctorUseCases, DoctorUseCases>();
+builder.Services.AddScoped<IDepartmentUseCases, DepartmentUseCases>();
+builder.Services.AddScoped<IMedicalRecordUseCases, MedicalRecordUseCases>();
+builder.Services.AddScoped<IPrescriptionUseCases, PrescriptionUseCases>();
+builder.Services.AddScoped<IAuthUseCases, AuthUseCases>();
+
+// FluentValidation
+builder.Services.AddValidatorsFromAssemblyContaining<CreatePatientDtoValidator>();
+builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestDtoValidator>();
+
+// ==============================================================================
+// 3. AUTHENTICATION & AUTHORIZATION
+// ==============================================================================
 var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] 
     ?? "HospitalManagement_SuperSecretKey_ForDevelopment_MustBeAtLeast32BytesLong!";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "HospitalManagementAPI";
@@ -36,6 +66,8 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
+    options.RequireHttpsMetadata = false;
+    options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
@@ -51,7 +83,9 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// 3. CORS Policy for Angular Frontend
+// ==============================================================================
+// 4. CORS POLICY (Angular Frontend Support)
+// ==============================================================================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngularApp", policy =>
@@ -63,34 +97,20 @@ builder.Services.AddCors(options =>
     });
 });
 
-// 4. Security & Business Services DI
-builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();
-builder.Services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
-
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IPatientService, PatientService>();
-builder.Services.AddScoped<IDoctorService, DoctorService>();
-builder.Services.AddScoped<IDepartmentService, DepartmentService>();
-builder.Services.AddScoped<IAppointmentService, AppointmentService>();
-builder.Services.AddScoped<IMedicalRecordService, MedicalRecordService>();
-builder.Services.AddScoped<IPrescriptionService, PrescriptionService>();
-
-// 5. FluentValidation
-builder.Services.AddValidatorsFromAssemblyContaining<CreatePatientDtoValidator>();
-builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestDtoValidator>();
-
-// 6. Controllers
+// Controllers (Primary Driving Adapter)
 builder.Services.AddControllers();
 
-// 7. Swagger with JWT Security
+// ==============================================================================
+// 5. SWAGGER WITH BEARER AUTH
+// ==============================================================================
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "Hospital Management System API (Layered + Auth)",
-        Version = "v1",
-        Description = "Step 1: Traditional Layered Architecture with JWT Authentication & Role-Based Authorization."
+        Title = "Hospital Management System API (Hexagonal Architecture)",
+        Version = "v2",
+        Description = "Step 2: Hexagonal Architecture (Ports & Adapters) with Redis Caching and Email Notification Adapters."
     });
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -120,23 +140,22 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-// 8. Middleware Pipeline
-// IMPORTANT: UseCors must be called BEFORE UseHttpsRedirection to prevent OPTIONS preflight 307 redirects!
-app.UseCors("AllowAngularApp");
-
+// ==============================================================================
+// 6. PIPELINE MIDDLEWARE
+// ==============================================================================
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-app.UseSwagger();
-app.UseSwaggerUI(c =>
-{
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Hospital Management API v1");
-    c.RoutePrefix = "swagger";
-});
+app.UseCors("AllowAngularApp");
 
-// Redirect root / to /swagger
-app.MapGet("/", () => Results.Redirect("/swagger"));
-// Fallback redirect from legacy weatherforecast
-app.MapGet("/weatherforecast", () => Results.Redirect("/swagger"));
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Hospital Management API v2 (Hexagonal)");
+        c.RoutePrefix = string.Empty;
+    });
+}
 
 if (!app.Environment.IsDevelopment())
 {
@@ -148,7 +167,9 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// 9. Auto-migrate/ensure database and seed initial data
+// ==============================================================================
+// 7. DATABASE MIGRATION & SEEDING
+// ==============================================================================
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -156,16 +177,18 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
+        logger.LogInformation("Applying EF Core migrations...");
         await context.Database.MigrateAsync();
+        logger.LogInformation("Database migrated successfully.");
+
+        logger.LogInformation("Seeding database...");
         await DbInitializer.SeedAsync(context);
-        logger.LogInformation("Database migrated and seeded successfully.");
+        logger.LogInformation("Database seeded successfully.");
     }
     catch (Exception ex)
     {
-        logger.LogWarning("Notice during database initialization: {Message}. The API will continue running.", ex.Message);
+        logger.LogError(ex, "An error occurred during database migration/seeding.");
     }
 }
 
 app.Run();
-
-public partial class Program { }

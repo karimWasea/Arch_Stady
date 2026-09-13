@@ -1,28 +1,27 @@
-using FluentValidation;
-using HospitalManagement.Core.DTOs.Appointment;
-using HospitalManagement.Core.DTOs.Common;
-using HospitalManagement.Core.Ports.Inbound;
+﻿using FluentValidation;
+using HospitalManagement.Application.DTOs.Clinical;
+using HospitalManagement.Application.DTOs.Common;
+using HospitalManagement.Application.Services.Clinical;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.API.Controllers;
 
 /// <summary>
-/// Primary (Driving) Adapter for Appointments.
-/// Accepts HTTP requests, validates input, calls Inbound Port (IAppointmentUseCases),
-/// and returns HTTP responses.
+/// Presentation Layer: Appointments Controller.
+/// Invokes Application service IAppointmentService.
 /// </summary>
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class AppointmentsController : ControllerBase
 {
-    private readonly IAppointmentUseCases _appointmentUseCases;
+    private readonly IAppointmentService _appointmentService;
     private readonly IValidator<CreateAppointmentDto> _validator;
 
-    public AppointmentsController(IAppointmentUseCases appointmentUseCases, IValidator<CreateAppointmentDto> validator)
+    public AppointmentsController(IAppointmentService appointmentService, IValidator<CreateAppointmentDto> validator)
     {
-        _appointmentUseCases = appointmentUseCases;
+        _appointmentService = appointmentService;
         _validator = validator;
     }
 
@@ -30,7 +29,7 @@ public class AppointmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<IEnumerable<AppointmentDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll()
     {
-        var appointments = await _appointmentUseCases.GetAllAsync();
+        var appointments = await _appointmentService.GetAllAsync();
         return Ok(ApiResponse<IEnumerable<AppointmentDto>>.Ok(appointments));
     }
 
@@ -39,7 +38,7 @@ public class AppointmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(int id)
     {
-        var appointment = await _appointmentUseCases.GetByIdAsync(id);
+        var appointment = await _appointmentService.GetByIdAsync(id);
         return Ok(ApiResponse<AppointmentDto>.Ok(appointment));
     }
 
@@ -55,7 +54,7 @@ public class AppointmentsController : ControllerBase
             throw new ValidationException(validationResult.Errors);
         }
 
-        var created = await _appointmentUseCases.CreateAsync(dto);
+        var created = await _appointmentService.CreateAsync(dto);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, ApiResponse<AppointmentDto>.Ok(created, "Appointment scheduled successfully."));
     }
 
@@ -65,7 +64,7 @@ public class AppointmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateAppointmentDto dto)
     {
-        var updated = await _appointmentUseCases.UpdateAsync(id, dto);
+        var updated = await _appointmentService.UpdateAsync(id, dto);
         return Ok(ApiResponse<AppointmentDto>.Ok(updated, "Appointment updated successfully."));
     }
 
@@ -75,7 +74,7 @@ public class AppointmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Complete(int id)
     {
-        var appointment = await _appointmentUseCases.CompleteAsync(id);
+        var appointment = await _appointmentService.CompleteAsync(id);
         return Ok(ApiResponse<AppointmentDto>.Ok(appointment, "Appointment marked as completed."));
     }
 
@@ -84,7 +83,7 @@ public class AppointmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Cancel(int id)
     {
-        var appointment = await _appointmentUseCases.CancelAsync(id);
+        var appointment = await _appointmentService.CancelAsync(id);
         return Ok(ApiResponse<AppointmentDto>.Ok(appointment, "Appointment cancelled successfully."));
     }
 
@@ -93,7 +92,7 @@ public class AppointmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
     {
-        await _appointmentUseCases.DeleteAsync(id);
+        await _appointmentService.DeleteAsync(id);
         return Ok(ApiResponse.Ok("Appointment deleted successfully."));
     }
 }

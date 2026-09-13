@@ -1,8 +1,7 @@
-<Solution>
+﻿<Solution>
+  <Project Path="HospitalManagement.Domain/HospitalManagement.Domain.csproj" />
+  <Project Path="HospitalManagement.Application/HospitalManagement.Application.csproj" />
+  <Project Path="HospitalManagement.Infrastructure/HospitalManagement.Infrastructure.csproj" />
   <Project Path="HospitalManagement.API/HospitalManagement.API.csproj" />
-  <Project Path="HospitalManagement.Core/HospitalManagement.Core.csproj" />
-  <Project Path="HospitalManagement.Adapters.Persistence/HospitalManagement.Adapters.Persistence.csproj" />
-  <Project Path="HospitalManagement.Adapters.Caching.Redis/HospitalManagement.Adapters.Caching.Redis.csproj" />
-  <Project Path="HospitalManagement.Adapters.Notifications.Email/HospitalManagement.Adapters.Notifications.Email.csproj" />
   <Project Path="HospitalManagement.Tests/HospitalManagement.Tests.csproj" />
 </Solution>

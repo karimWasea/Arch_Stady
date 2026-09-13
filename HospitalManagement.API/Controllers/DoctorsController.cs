@@ -1,27 +1,27 @@
-using FluentValidation;
-using HospitalManagement.Core.DTOs.Common;
-using HospitalManagement.Core.DTOs.Doctor;
-using HospitalManagement.Core.Ports.Inbound;
+﻿using FluentValidation;
+using HospitalManagement.Application.DTOs.Clinical;
+using HospitalManagement.Application.DTOs.Common;
+using HospitalManagement.Application.Services.Clinical;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.API.Controllers;
 
 /// <summary>
-/// Primary (Driving) Adapter for Doctors.
-/// Invokes Inbound Port (IDoctorUseCases).
+/// Presentation Layer: Doctors Controller.
+/// Invokes Application service IDoctorService.
 /// </summary>
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class DoctorsController : ControllerBase
 {
-    private readonly IDoctorUseCases _doctorUseCases;
+    private readonly IDoctorService _doctorService;
     private readonly IValidator<CreateDoctorDto> _validator;
 
-    public DoctorsController(IDoctorUseCases doctorUseCases, IValidator<CreateDoctorDto> validator)
+    public DoctorsController(IDoctorService doctorService, IValidator<CreateDoctorDto> validator)
     {
-        _doctorUseCases = doctorUseCases;
+        _doctorService = doctorService;
         _validator = validator;
     }
 
@@ -29,7 +29,7 @@ public class DoctorsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<IEnumerable<DoctorDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll()
     {
-        var doctors = await _doctorUseCases.GetAllAsync();
+        var doctors = await _doctorService.GetAllAsync();
         return Ok(ApiResponse<IEnumerable<DoctorDto>>.Ok(doctors));
     }
 
@@ -38,7 +38,7 @@ public class DoctorsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(int id)
     {
-        var doctor = await _doctorUseCases.GetByIdAsync(id);
+        var doctor = await _doctorService.GetByIdAsync(id);
         return Ok(ApiResponse<DoctorDto>.Ok(doctor));
     }
 
@@ -54,7 +54,7 @@ public class DoctorsController : ControllerBase
             throw new ValidationException(validationResult.Errors);
         }
 
-        var created = await _doctorUseCases.CreateAsync(dto);
+        var created = await _doctorService.CreateAsync(dto);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, ApiResponse<DoctorDto>.Ok(created, "Doctor created successfully."));
     }
 
@@ -64,7 +64,7 @@ public class DoctorsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateDoctorDto dto)
     {
-        var updated = await _doctorUseCases.UpdateAsync(id, dto);
+        var updated = await _doctorService.UpdateAsync(id, dto);
         return Ok(ApiResponse<DoctorDto>.Ok(updated, "Doctor updated successfully."));
     }
 
@@ -74,7 +74,7 @@ public class DoctorsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(int id)
     {
-        await _doctorUseCases.DeleteAsync(id);
+        await _doctorService.DeleteAsync(id);
         return Ok(ApiResponse.Ok("Doctor deleted successfully."));
     }
 }

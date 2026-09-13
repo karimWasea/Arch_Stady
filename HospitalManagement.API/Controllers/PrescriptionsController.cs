@@ -1,27 +1,27 @@
-using FluentValidation;
-using HospitalManagement.Core.DTOs.Common;
-using HospitalManagement.Core.DTOs.Prescription;
-using HospitalManagement.Core.Ports.Inbound;
+﻿using FluentValidation;
+using HospitalManagement.Application.DTOs.Clinical;
+using HospitalManagement.Application.DTOs.Common;
+using HospitalManagement.Application.Services.Clinical;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.API.Controllers;
 
 /// <summary>
-/// Primary (Driving) Adapter for Prescriptions.
-/// Invokes Inbound Port (IPrescriptionUseCases).
+/// Presentation Layer: Prescriptions Controller.
+/// Invokes Application service IPrescriptionService.
 /// </summary>
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class PrescriptionsController : ControllerBase
 {
-    private readonly IPrescriptionUseCases _prescriptionUseCases;
+    private readonly IPrescriptionService _prescriptionService;
     private readonly IValidator<CreatePrescriptionDto> _validator;
 
-    public PrescriptionsController(IPrescriptionUseCases prescriptionUseCases, IValidator<CreatePrescriptionDto> validator)
+    public PrescriptionsController(IPrescriptionService prescriptionService, IValidator<CreatePrescriptionDto> validator)
     {
-        _prescriptionUseCases = prescriptionUseCases;
+        _prescriptionService = prescriptionService;
         _validator = validator;
     }
 
@@ -29,7 +29,7 @@ public class PrescriptionsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<IEnumerable<PrescriptionDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll()
     {
-        var prescriptions = await _prescriptionUseCases.GetAllAsync();
+        var prescriptions = await _prescriptionService.GetAllAsync();
         return Ok(ApiResponse<IEnumerable<PrescriptionDto>>.Ok(prescriptions));
     }
 
@@ -38,7 +38,7 @@ public class PrescriptionsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetByPatientId(int patientId)
     {
-        var prescriptions = await _prescriptionUseCases.GetByPatientIdAsync(patientId);
+        var prescriptions = await _prescriptionService.GetByPatientIdAsync(patientId);
         return Ok(ApiResponse<IEnumerable<PrescriptionDto>>.Ok(prescriptions));
     }
 
@@ -47,7 +47,7 @@ public class PrescriptionsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(int id)
     {
-        var prescription = await _prescriptionUseCases.GetByIdAsync(id);
+        var prescription = await _prescriptionService.GetByIdAsync(id);
         return Ok(ApiResponse<PrescriptionDto>.Ok(prescription));
     }
 
@@ -62,7 +62,7 @@ public class PrescriptionsController : ControllerBase
             throw new ValidationException(validationResult.Errors);
         }
 
-        var created = await _prescriptionUseCases.CreateAsync(dto);
+        var created = await _prescriptionService.CreateAsync(dto);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, ApiResponse<PrescriptionDto>.Ok(created, "Prescription created successfully."));
     }
 
@@ -71,7 +71,7 @@ public class PrescriptionsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdatePrescriptionDto dto)
     {
-        var updated = await _prescriptionUseCases.UpdateAsync(id, dto);
+        var updated = await _prescriptionService.UpdateAsync(id, dto);
         return Ok(ApiResponse<PrescriptionDto>.Ok(updated, "Prescription updated successfully."));
     }
 }

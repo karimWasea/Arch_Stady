@@ -1,9 +1,10 @@
-using HospitalManagement.Core.Domain;
-using HospitalManagement.Core.DTOs.Auth;
-using HospitalManagement.Core.Exceptions;
-using HospitalManagement.Core.Ports.Outbound.Repositories;
-using HospitalManagement.Core.Security;
-using HospitalManagement.Core.UseCases;
+﻿using HospitalManagement.Application.DTOs.Auth;
+using HospitalManagement.Application.Interfaces.Repositories;
+using HospitalManagement.Application.Security;
+using HospitalManagement.Application.Services.Clinical;
+using HospitalManagement.Domain.Entities.Clinical;
+using HospitalManagement.Domain.Enums;
+using HospitalManagement.Domain.Exceptions;
 using Microsoft.Extensions.Configuration;
 using Moq;
 
@@ -15,7 +16,7 @@ public class AuthUseCasesTests
     private readonly IPasswordHasher _passwordHasher = new PasswordHasher();
     private readonly IJwtTokenGenerator _jwtTokenGenerator = new JwtTokenGenerator();
     private readonly IConfiguration _configuration;
-    private readonly AuthUseCases _useCases;
+    private readonly AuthService _service;
 
     public AuthUseCasesTests()
     {
@@ -28,7 +29,7 @@ public class AuthUseCasesTests
         };
         _configuration = new ConfigurationBuilder().AddInMemoryCollection(configData).Build();
 
-        _useCases = new AuthUseCases(
+        _service = new AuthService(
             _userRepoMock.Object,
             _passwordHasher,
             _jwtTokenGenerator,
@@ -57,7 +58,7 @@ public class AuthUseCasesTests
         var dto = new LoginRequestDto { UsernameOrEmail = "staff1", Password = "Password123!" };
 
         // Act
-        var response = await _useCases.LoginAsync(dto);
+        var response = await _service.LoginAsync(dto);
 
         // Assert
         Assert.NotNull(response);
@@ -86,6 +87,6 @@ public class AuthUseCasesTests
         var dto = new LoginRequestDto { UsernameOrEmail = "staff1", Password = "WrongPassword" };
 
         // Act & Assert
-        await Assert.ThrowsAsync<BusinessRuleException>(() => _useCases.LoginAsync(dto));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => _service.LoginAsync(dto));
     }
 }

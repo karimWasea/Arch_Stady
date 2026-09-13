@@ -1,23 +1,24 @@
-using HospitalManagement.Adapters.Notifications.Email;
-using HospitalManagement.Core.Ports.Outbound.Notifications;
+﻿using HospitalManagement.Application.Interfaces.Notifications;
+using HospitalManagement.Infrastructure.Notifications;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace HospitalManagement.Tests;
 
-public class EmailNotificationAdapterTests
+public class EmailServiceTests
 {
     [Fact]
-    public async Task EmailNotificationAdapter_DispatchesWithoutThrowing()
+    public async Task EmailService_DispatchesWithoutThrowing()
     {
         // Arrange
-        var settings = Options.Create(new EmailSettings
+        var configData = new Dictionary<string, string?>
         {
-            UseDevelopmentLogger = true,
-            SmtpHost = "localhost"
-        });
-        var logger = NullLogger<EmailNotificationAdapter>.Instance;
-        var adapter = new EmailNotificationAdapter(settings, logger);
+            { "EmailSettings:SenderEmail", "test@hospital.org" },
+            { "EmailSettings:SenderName", "Test Hospital" }
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(configData).Build();
+        var logger = NullLogger<EmailService>.Instance;
+        var service = new EmailService(configuration, logger);
 
         var notification = new AppointmentNotificationDto(
             AppointmentId: 99,
@@ -30,8 +31,8 @@ public class EmailNotificationAdapterTests
             Notes: "Initial consultation"
         );
 
-        // Act & Assert (should complete successfully in development simulation mode)
-        var exception = await Record.ExceptionAsync(() => adapter.SendAppointmentBookedAsync(notification));
+        // Act & Assert
+        var exception = await Record.ExceptionAsync(() => service.SendAppointmentBookedAsync(notification));
         Assert.Null(exception);
     }
 }

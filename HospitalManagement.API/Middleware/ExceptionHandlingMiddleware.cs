@@ -1,8 +1,8 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.Json;
 using FluentValidation;
-using HospitalManagement.Core.DTOs.Common;
-using HospitalManagement.Core.Exceptions;
+using HospitalManagement.Application.DTOs.Common;
+using HospitalManagement.Domain.Exceptions;
 
 namespace HospitalManagement.API.Middleware;
 

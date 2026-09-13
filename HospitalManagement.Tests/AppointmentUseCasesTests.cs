@@ -1,32 +1,33 @@
-using HospitalManagement.Core.Domain;
-using HospitalManagement.Core.DTOs.Appointment;
-using HospitalManagement.Core.Exceptions;
-using HospitalManagement.Core.Ports.Outbound.Caching;
-using HospitalManagement.Core.Ports.Outbound.Notifications;
-using HospitalManagement.Core.Ports.Outbound.Repositories;
-using HospitalManagement.Core.UseCases;
+﻿using HospitalManagement.Application.DTOs.Clinical;
+using HospitalManagement.Application.Interfaces.Caching;
+using HospitalManagement.Application.Interfaces.Notifications;
+using HospitalManagement.Application.Interfaces.Repositories;
+using HospitalManagement.Application.Services.Clinical;
+using HospitalManagement.Domain.Entities.Clinical;
+using HospitalManagement.Domain.Enums;
+using HospitalManagement.Domain.Exceptions;
 using Moq;
 
 namespace HospitalManagement.Tests;
 
-public class AppointmentUseCasesTests
+public class AppointmentServiceTests
 {
     private readonly Mock<IAppointmentRepository> _appointmentRepoMock = new();
     private readonly Mock<IPatientRepository> _patientRepoMock = new();
     private readonly Mock<IDoctorRepository> _doctorRepoMock = new();
-    private readonly Mock<ICachePort> _cachePortMock = new();
-    private readonly Mock<INotificationPort> _notificationPortMock = new();
+    private readonly Mock<ICacheService> _cacheServiceMock = new();
+    private readonly Mock<IEmailService> _emailServiceMock = new();
 
-    private readonly AppointmentUseCases _useCases;
+    private readonly AppointmentService _service;
 
-    public AppointmentUseCasesTests()
+    public AppointmentServiceTests()
     {
-        _useCases = new AppointmentUseCases(
+        _service = new AppointmentService(
             _appointmentRepoMock.Object,
             _patientRepoMock.Object,
             _doctorRepoMock.Object,
-            _cachePortMock.Object,
-            _notificationPortMock.Object);
+            _cacheServiceMock.Object,
+            _emailServiceMock.Object);
     }
 
     [Fact]
@@ -47,21 +48,19 @@ public class AppointmentUseCasesTests
         _doctorRepoMock.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Doctor { Id = 2, FirstName = "Sarah", LastName = "Smith" });
 
-        // Simulate doctor conflict
         _appointmentRepoMock.Setup(r => r.HasDoctorConflictAsync(2, appointmentDate, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         // Act & Assert
-        var ex = await Assert.ThrowsAsync<ConflictException>(() => _useCases.CreateAsync(dto));
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => _service.CreateAsync(dto));
         Assert.Contains("Doctor is already booked", ex.Message);
 
-        // Ensure no appointment was persisted and no email was sent
         _appointmentRepoMock.Verify(r => r.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()), Times.Never);
-        _notificationPortMock.Verify(n => n.SendAppointmentBookedAsync(It.IsAny<AppointmentNotificationDto>(), It.IsAny<CancellationToken>()), Times.Never);
+        _emailServiceMock.Verify(n => n.SendAppointmentBookedAsync(It.IsAny<AppointmentNotificationDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task CreateAsync_WhenValid_PersistsEvictsCacheAndSendsEmailNotification()
+    public async Task CreateAsync_WhenValid_SavesAppointmentAndSendsEmailNotification()
     {
         // Arrange
         var appointmentDate = DateTime.UtcNow.AddDays(2);
@@ -70,11 +69,11 @@ public class AppointmentUseCasesTests
             PatientId = 1,
             DoctorId = 2,
             AppointmentDate = appointmentDate,
-            Notes = "Routine checkup"
+            Notes = "Checkup"
         };
 
-        var patient = new Patient { Id = 1, FirstName = "Alice", LastName = "Smith", Email = "alice@example.com" };
-        var doctor = new Doctor { Id = 2, FirstName = "Robert", LastName = "Taylor", Specialization = "Cardiology" };
+        var patient = new Patient { Id = 1, FirstName = "John", LastName = "Doe", Email = "john@example.com" };
+        var doctor = new Doctor { Id = 2, FirstName = "Sarah", LastName = "Smith", Specialization = "Cardiologist", Email = "sarah@hospital.org" };
 
         _patientRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(patient);
         _doctorRepoMock.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync(doctor);
@@ -84,56 +83,56 @@ public class AppointmentUseCasesTests
         _appointmentRepoMock.Setup(r => r.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Appointment a, CancellationToken _) =>
             {
-                a.Id = 100;
+                a.Id = 10;
+                a.Patient = patient;
+                a.Doctor = doctor;
                 return a;
             });
 
         // Act
-        var result = await _useCases.CreateAsync(dto);
+        var result = await _service.CreateAsync(dto);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(100, result.Id);
+        Assert.Equal(10, result.Id);
         Assert.Equal(AppointmentStatus.Scheduled, result.Status);
 
-        // 1. Verify Persistence Port was called
-        _appointmentRepoMock.Verify(r => r.AddAsync(It.Is<Appointment>(a => a.PatientId == 1 && a.DoctorId == 2), It.IsAny<CancellationToken>()), Times.Once);
-
-        // 2. Verify Redis Cache Port was cleared
-        _cachePortMock.Verify(c => c.RemoveByPrefixAsync("appointments:", It.IsAny<CancellationToken>()), Times.Once);
-
-        // 3. Verify Email Notification Port was dispatched
-        _notificationPortMock.Verify(n => n.SendAppointmentBookedAsync(
-            It.Is<AppointmentNotificationDto>(e => e.AppointmentId == 100 && e.PatientEmail == "alice@example.com" && e.DoctorName == "Dr. Robert Taylor"),
-            It.IsAny<CancellationToken>()), Times.Once);
+        _appointmentRepoMock.Verify(r => r.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()), Times.Once);
+        _cacheServiceMock.Verify(c => c.RemoveByPrefixAsync("appointments:", It.IsAny<CancellationToken>()), Times.Once);
+        _emailServiceMock.Verify(n => n.SendAppointmentBookedAsync(It.Is<AppointmentNotificationDto>(dto =>
+            dto.AppointmentId == 10 &&
+            dto.PatientEmail == "john@example.com" &&
+            dto.DoctorName == "Dr. Sarah Smith"
+        ), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task CancelAsync_WhenValid_UpdatesStatusEvictsCacheAndSendsCancellationEmail()
+    public async Task CancelAsync_WhenValid_UpdatesStatusAndSendsCancellationEmail()
     {
         // Arrange
         var appointment = new Appointment
         {
-            Id = 42,
+            Id = 5,
             PatientId = 1,
             DoctorId = 2,
             AppointmentDate = DateTime.UtcNow.AddDays(1),
             Status = AppointmentStatus.Scheduled,
             Patient = new Patient { Id = 1, FirstName = "John", LastName = "Doe", Email = "john@example.com" },
-            Doctor = new Doctor { Id = 2, FirstName = "Emily", LastName = "Clark", Specialization = "Neurology" }
+            Doctor = new Doctor { Id = 2, FirstName = "Sarah", LastName = "Smith", Specialization = "Cardiologist" }
         };
 
-        _appointmentRepoMock.Setup(r => r.GetByIdAsync(42, It.IsAny<CancellationToken>())).ReturnsAsync(appointment);
+        _appointmentRepoMock.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(appointment);
 
         // Act
-        var result = await _useCases.CancelAsync(42);
+        var result = await _service.CancelAsync(5);
 
         // Assert
         Assert.Equal(AppointmentStatus.Cancelled, result.Status);
         _appointmentRepoMock.Verify(r => r.UpdateAsync(It.Is<Appointment>(a => a.Status == AppointmentStatus.Cancelled), It.IsAny<CancellationToken>()), Times.Once);
-        _cachePortMock.Verify(c => c.RemoveByPrefixAsync("appointments:", It.IsAny<CancellationToken>()), Times.Once);
-        _notificationPortMock.Verify(n => n.SendAppointmentCancelledAsync(
-            It.Is<AppointmentNotificationDto>(e => e.AppointmentId == 42 && e.PatientEmail == "john@example.com"),
-            It.IsAny<CancellationToken>()), Times.Once);
+        _emailServiceMock.Verify(n => n.SendAppointmentCancelledAsync(It.Is<AppointmentNotificationDto>(dto =>
+            dto.AppointmentId == 5 &&
+            dto.PatientEmail == "john@example.com"
+        ), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

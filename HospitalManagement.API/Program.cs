@@ -1,15 +1,8 @@
-using System.Text;
-using FluentValidation;
-using HospitalManagement.Adapters.Caching.Redis;
-using HospitalManagement.Adapters.Notifications.Email;
-using HospitalManagement.Adapters.Persistence;
-using HospitalManagement.Adapters.Persistence.Context;
-using HospitalManagement.Adapters.Persistence.Data;
+﻿using System.Text;
+using HospitalManagement.Application;
 using HospitalManagement.API.Middleware;
-using HospitalManagement.Core.Ports.Inbound;
-using HospitalManagement.Core.Security;
-using HospitalManagement.Core.UseCases;
-using HospitalManagement.Core.Validators;
+using HospitalManagement.Infrastructure;
+using HospitalManagement.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -18,41 +11,17 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 // ==============================================================================
-// 1. DRIVEN (SECONDARY) ADAPTERS CONFIGURATION
+// 1. ONION ARCHITECTURE LAYERS REGISTRATION
 // ==============================================================================
 
-// Persistence Adapter (EF Core + SQL Server)
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? "Server=(localdb)\\mssqllocaldb;Database=HospitalManagementDb;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True";
-builder.Services.AddPersistenceAdapter(connectionString);
+// Middle Ring: Application Layer (Use Cases, Application Services, Validators)
+builder.Services.AddApplication();
 
-// Caching Adapter (Redis with resilient in-memory fallback)
-builder.Services.AddRedisCacheAdapter();
-
-// Notifications Adapter (Email with responsive HTML & console preview)
-builder.Services.AddEmailNotificationAdapter(builder.Configuration);
+// Outer Ring: Infrastructure Layer (EF Core, SQL Server, Redis Cache, Email)
+builder.Services.AddInfrastructure(builder.Configuration);
 
 // ==============================================================================
-// 2. CORE SERVICES & INBOUND (PRIMARY) USE CASES DI
-// ==============================================================================
-builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();
-builder.Services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
-
-// Register Inbound Ports (Driving Use Cases)
-builder.Services.AddScoped<IAppointmentUseCases, AppointmentUseCases>();
-builder.Services.AddScoped<IPatientUseCases, PatientUseCases>();
-builder.Services.AddScoped<IDoctorUseCases, DoctorUseCases>();
-builder.Services.AddScoped<IDepartmentUseCases, DepartmentUseCases>();
-builder.Services.AddScoped<IMedicalRecordUseCases, MedicalRecordUseCases>();
-builder.Services.AddScoped<IPrescriptionUseCases, PrescriptionUseCases>();
-builder.Services.AddScoped<IAuthUseCases, AuthUseCases>();
-
-// FluentValidation
-builder.Services.AddValidatorsFromAssemblyContaining<CreatePatientDtoValidator>();
-builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestDtoValidator>();
-
-// ==============================================================================
-// 3. AUTHENTICATION & AUTHORIZATION
+// 2. AUTHENTICATION & AUTHORIZATION (JWT)
 // ==============================================================================
 var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] 
     ?? "HospitalManagement_SuperSecretKey_ForDevelopment_MustBeAtLeast32BytesLong!";
@@ -84,7 +53,7 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // ==============================================================================
-// 4. CORS POLICY (Angular Frontend Support)
+// 3. CORS POLICY (Angular Frontend Support)
 // ==============================================================================
 builder.Services.AddCors(options =>
 {
@@ -97,20 +66,20 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Controllers (Primary Driving Adapter)
+// Presentation Ring: Controllers
 builder.Services.AddControllers();
 
 // ==============================================================================
-// 5. SWAGGER WITH BEARER AUTH
+// 4. SWAGGER WITH BEARER AUTH
 // ==============================================================================
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "Hospital Management System API (Hexagonal Architecture)",
-        Version = "v2",
-        Description = "Step 2: Hexagonal Architecture (Ports & Adapters) with Redis Caching and Email Notification Adapters."
+        Title = "Hospital Management System API (Onion Architecture)",
+        Version = "v3",
+        Description = "Step 3: Onion Architecture with Jeffrey Palermo Concentric Rings (Domain -> Application -> Infrastructure & Presentation). Includes Clinical, Pharmacy, Laboratory, and Billing Subsystems."
     });
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -122,7 +91,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer"
     });
 
-    options.AddSecurityRequirement(new  OpenApiSecurityRequirement
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
             new OpenApiSecurityScheme
@@ -141,7 +110,7 @@ builder.Services.AddSwaggerGen(options =>
 var app = builder.Build();
 
 // ==============================================================================
-// 6. PIPELINE MIDDLEWARE
+// 5. PIPELINE MIDDLEWARE
 // ==============================================================================
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
@@ -152,7 +121,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Hospital Management API v2 (Hexagonal)");
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Hospital Management API v3 (Onion)");
         c.RoutePrefix = string.Empty;
     });
 }
@@ -168,7 +137,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 // ==============================================================================
-// 7. DATABASE MIGRATION & SEEDING
+// 6. DATABASE INITIALIZATION & SEEDING
 // ==============================================================================
 using (var scope = app.Services.CreateScope())
 {
@@ -177,9 +146,9 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        logger.LogInformation("Applying EF Core migrations...");
-        await context.Database.MigrateAsync();
-        logger.LogInformation("Database migrated successfully.");
+        logger.LogInformation("Ensuring database is created with updated Onion schema...");
+        await context.Database.EnsureCreatedAsync();
+        logger.LogInformation("Database ready.");
 
         logger.LogInformation("Seeding database...");
         await DbInitializer.SeedAsync(context);
@@ -187,7 +156,7 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred during database migration/seeding.");
+        logger.LogError(ex, "An error occurred during database initialization/seeding.");
     }
 }
 

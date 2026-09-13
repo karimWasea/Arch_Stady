@@ -1,11 +1,12 @@
-using HospitalManagement.Adapters.Persistence.Context;
-using HospitalManagement.Adapters.Persistence.Repositories;
-using HospitalManagement.Core.Domain;
+﻿using HospitalManagement.Domain.Entities.Clinical;
+using HospitalManagement.Domain.Enums;
+using HospitalManagement.Infrastructure.Data;
+using HospitalManagement.Infrastructure.Repositories.Clinical;
 using Microsoft.EntityFrameworkCore;
 
 namespace HospitalManagement.Tests;
 
-public class PersistenceAdapterTests
+public class PersistenceRepositoryTests
 {
     private static ApplicationDbContext CreateInMemoryContext(string dbName)
     {
@@ -16,11 +17,11 @@ public class PersistenceAdapterTests
     }
 
     [Fact]
-    public async Task SqlPatientRepository_AddAndGetById_WorksSuccessfully()
+    public async Task PatientRepository_AddAndGetById_WorksSuccessfully()
     {
         // Arrange
-        using var context = CreateInMemoryContext(nameof(SqlPatientRepository_AddAndGetById_WorksSuccessfully));
-        var repo = new SqlPatientRepository(context);
+        using var context = CreateInMemoryContext(nameof(PatientRepository_AddAndGetById_WorksSuccessfully));
+        var repo = new PatientRepository(context);
 
         var patient = new Patient
         {
@@ -45,11 +46,11 @@ public class PersistenceAdapterTests
     }
 
     [Fact]
-    public async Task SqlAppointmentRepository_ConflictDetection_DetectsDoctorAndPatientBusy()
+    public async Task AppointmentRepository_ConflictDetection_DetectsDoctorAndPatientBusy()
     {
         // Arrange
-        using var context = CreateInMemoryContext(nameof(SqlAppointmentRepository_ConflictDetection_DetectsDoctorAndPatientBusy));
-        var repo = new SqlAppointmentRepository(context);
+        using var context = CreateInMemoryContext(nameof(AppointmentRepository_ConflictDetection_DetectsDoctorAndPatientBusy));
+        var repo = new AppointmentRepository(context);
 
         var slotTime = new DateTime(2026, 10, 15, 10, 0, 0, DateTimeKind.Utc);
 

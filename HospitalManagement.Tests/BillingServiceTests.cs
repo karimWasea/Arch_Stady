@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.DTOs.Billing;
+using HospitalManagement.Application.DTOs.Billing;
 using HospitalManagement.Application.Interfaces.Caching;
 using HospitalManagement.Application.Interfaces.Notifications;
 using HospitalManagement.Application.Interfaces.Repositories;
@@ -50,16 +50,8 @@ public class BillingServiceTests
             }
         };
 
-        var patient = new Patient { Id = 1, FirstName = "Clark", LastName = "Kent", Email = "clark@dailyplanet.com" };
-        var insurance = new Insurance
-        {
-            Id = 10,
-            PatientId = 1,
-            CoveragePercentage = 80m,
-            MaxCoverageAmount = 5000m,
-            IsActive = true,
-            ExpiryDate = DateTime.UtcNow.AddYears(1)
-        };
+        var patient = Patient.Create("Clark", "Kent", new DateTime(1980, 1, 1), "Male", "123", "clark@dailyplanet.com", "Metropolis").SetId(1);
+        var insurance = Insurance.Create(1, "Daily Planet Health", "POL-123", 80m, 5000m, DateTime.UtcNow.AddYears(1)).SetId(10);
 
         _patientRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(patient);
         _insuranceRepoMock.Setup(r => r.GetActiveByPatientIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(insurance);
@@ -67,7 +59,7 @@ public class BillingServiceTests
         _invoiceRepoMock.Setup(r => r.AddAsync(It.IsAny<Invoice>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Invoice inv, CancellationToken _) =>
             {
-                inv.Id = 101;
+                inv.SetId(101);
                 inv.Patient = patient;
                 return inv;
             });
@@ -94,17 +86,15 @@ public class BillingServiceTests
     public async Task RecordPaymentAsync_ReducesBalanceDueAndMarksInvoicePaidWhenZero()
     {
         // Arrange
-        var invoice = new Invoice
-        {
-            Id = 101,
-            PatientId = 1,
-            InvoiceNumber = "INV-2026-0001",
-            SubTotal = 500m,
-            TotalAmount = 500m,
-            PaidAmount = 200m,
-            BalanceDue = 300m,
-            Status = InvoiceStatus.Pending
-        };
+        var invoice = Invoice.Create(
+            invoiceNumber: "INV-2026-0001",
+            patientId: 1,
+            appointmentId: null,
+            items: new[] { InvoiceItem.Create("Service", 1, 500m) },
+            taxPercentage: 0m,
+            discountAmount: 0m,
+            insuranceCoverage: 0m).SetId(101);
+        invoice.AddPayment(200m, PaymentMethod.Cash);
 
         _invoiceRepoMock.Setup(r => r.GetByIdAsync(101, It.IsAny<CancellationToken>())).ReturnsAsync(invoice);
 
@@ -119,7 +109,7 @@ public class BillingServiceTests
         _paymentRepoMock.Setup(r => r.AddAsync(It.IsAny<Payment>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Payment p, CancellationToken _) =>
             {
-                p.Id = 555;
+                p.SetId(555);
                 return p;
             });
 

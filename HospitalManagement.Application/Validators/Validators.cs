@@ -31,6 +31,14 @@ public class CreateDoctorDtoValidator : AbstractValidator<CreateDoctorDto>
     }
 }
 
+public class CreateDepartmentDtoValidator : AbstractValidator<CreateDepartmentDto>
+{
+    public CreateDepartmentDtoValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(100);
+    }
+}
+
 public class CreateAppointmentDtoValidator : AbstractValidator<CreateAppointmentDto>
 {
     public CreateAppointmentDtoValidator()
@@ -42,12 +50,53 @@ public class CreateAppointmentDtoValidator : AbstractValidator<CreateAppointment
     }
 }
 
+public class CreateMedicalRecordDtoValidator : AbstractValidator<CreateMedicalRecordDto>
+{
+    public CreateMedicalRecordDtoValidator()
+    {
+        RuleFor(x => x.PatientId).GreaterThan(0);
+        RuleFor(x => x.DoctorId).GreaterThan(0);
+        RuleFor(x => x.Diagnosis).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Symptoms).NotEmpty();
+        RuleFor(x => x.Treatment).NotEmpty();
+    }
+}
+
+public class CreatePrescriptionDtoValidator : AbstractValidator<CreatePrescriptionDto>
+{
+    public CreatePrescriptionDtoValidator()
+    {
+        RuleFor(x => x.PatientId).GreaterThan(0);
+        RuleFor(x => x.DoctorId).GreaterThan(0);
+        RuleFor(x => x.Items).NotEmpty().WithMessage("At least one prescription item is required.");
+        RuleForEach(x => x.Items).ChildRules(item =>
+        {
+            item.RuleFor(i => i.MedicationName).NotEmpty().MaximumLength(100);
+            item.RuleFor(i => i.Dosage).NotEmpty().MaximumLength(50);
+            item.RuleFor(i => i.Frequency).NotEmpty().MaximumLength(50);
+            item.RuleFor(i => i.Duration).NotEmpty().MaximumLength(50);
+        });
+    }
+}
+
 public class LoginRequestDtoValidator : AbstractValidator<LoginRequestDto>
 {
     public LoginRequestDtoValidator()
     {
         RuleFor(x => x.UsernameOrEmail).NotEmpty();
         RuleFor(x => x.Password).NotEmpty().MinimumLength(6);
+    }
+}
+
+public class RegisterRequestDtoValidator : AbstractValidator<RegisterRequestDto>
+{
+    public RegisterRequestDtoValidator()
+    {
+        RuleFor(x => x.Username).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Email).NotEmpty().EmailAddress();
+        RuleFor(x => x.Password).NotEmpty().MinimumLength(6);
+        RuleFor(x => x.FullName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Role).IsInEnum();
     }
 }
 
@@ -103,6 +152,30 @@ public class CreateLabOrderDtoValidator : AbstractValidator<CreateLabOrderDto>
         RuleFor(x => x.PatientId).GreaterThan(0);
         RuleFor(x => x.DoctorId).GreaterThan(0);
         RuleFor(x => x.TestIds).NotEmpty().WithMessage("At least one lab test must be selected.");
+    }
+}
+
+public class RecordLabResultDtoValidator : AbstractValidator<RecordLabResultDto>
+{
+    public RecordLabResultDtoValidator()
+    {
+        RuleFor(x => x.LabOrderId).GreaterThan(0);
+        RuleFor(x => x.LabTestId).GreaterThan(0);
+        RuleFor(x => x.ResultValue).NotEmpty();
+        RuleFor(x => x.PerformedBy).NotEmpty().MaximumLength(100);
+    }
+}
+
+public class CreateInsuranceDtoValidator : AbstractValidator<CreateInsuranceDto>
+{
+    public CreateInsuranceDtoValidator()
+    {
+        RuleFor(x => x.PatientId).GreaterThan(0);
+        RuleFor(x => x.ProviderName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PolicyNumber).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.CoveragePercentage).InclusiveBetween(0, 100);
+        RuleFor(x => x.MaxCoverageAmount).GreaterThan(0);
+        RuleFor(x => x.ExpiryDate).GreaterThan(DateTime.UtcNow).WithMessage("Expiry date must be in the future.");
     }
 }
 

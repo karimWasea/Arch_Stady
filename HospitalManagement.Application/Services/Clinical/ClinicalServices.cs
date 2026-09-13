@@ -69,15 +69,12 @@ public class AppointmentService : IAppointmentService
         if (await _appointmentRepository.HasPatientConflictAsync(dto.PatientId, dto.AppointmentDate, null, cancellationToken))
             throw new ConflictException("Patient already has an active appointment scheduled at this exact time.");
 
-        var appointment = new Appointment
-        {
-            PatientId = dto.PatientId,
-            DoctorId = dto.DoctorId,
-            AppointmentDate = dto.AppointmentDate,
-            Status = AppointmentStatus.Scheduled,
-            Notes = dto.Notes,
-            CreatedAt = DateTime.UtcNow
-        };
+        // Domain Aggregate Root enforces scheduling validation (future date, positive IDs)
+        var appointment = Appointment.Create(
+            dto.PatientId,
+            dto.DoctorId,
+            dto.AppointmentDate,
+            dto.Notes);
 
         var created = await _appointmentRepository.AddAsync(appointment, cancellationToken);
         created.Patient = patient;
@@ -111,11 +108,10 @@ public class AppointmentService : IAppointmentService
 
             if (await _appointmentRepository.HasPatientConflictAsync(appointment.PatientId, dto.AppointmentDate, id, cancellationToken))
                 throw new ConflictException("Patient already has an active appointment scheduled at the updated time.");
-        }
 
-        appointment.AppointmentDate = dto.AppointmentDate;
-        appointment.Status = dto.Status;
-        appointment.Notes = dto.Notes;
+            // Domain method enforces reschedule rules
+            appointment.Reschedule(dto.AppointmentDate, dto.Notes);
+        }
 
         await _appointmentRepository.UpdateAsync(appointment, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("appointments:", cancellationToken);
@@ -127,13 +123,9 @@ public class AppointmentService : IAppointmentService
         var appointment = await _appointmentRepository.GetByIdAsync(id, cancellationToken);
         if (appointment == null) throw new NotFoundException(nameof(Appointment), id);
 
-        if (appointment.Status == AppointmentStatus.Completed)
-            throw new BusinessRuleException("Cannot cancel an appointment that is already completed.");
+        // Domain Aggregate Root enforces cancellation state transition invariants
+        appointment.Cancel();
 
-        if (appointment.Status == AppointmentStatus.Cancelled)
-            throw new BusinessRuleException("Appointment is already cancelled.");
-
-        appointment.Status = AppointmentStatus.Cancelled;
         await _appointmentRepository.UpdateAsync(appointment, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("appointments:", cancellationToken);
 
@@ -159,10 +151,9 @@ public class AppointmentService : IAppointmentService
         var appointment = await _appointmentRepository.GetByIdAsync(id, cancellationToken);
         if (appointment == null) throw new NotFoundException(nameof(Appointment), id);
 
-        if (appointment.Status == AppointmentStatus.Cancelled)
-            throw new BusinessRuleException("Cannot complete an appointment that has been cancelled.");
+        // Domain Aggregate Root enforces completion state transition invariants
+        appointment.Complete();
 
-        appointment.Status = AppointmentStatus.Completed;
         await _appointmentRepository.UpdateAsync(appointment, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("appointments:", cancellationToken);
         return MapToDto(appointment);
@@ -206,92 +197,48 @@ public class PatientService : IPatientService
     public async Task<IEnumerable<PatientDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var patients = await _patientRepository.GetAllAsync(cancellationToken);
-        return patients.Select(p => new PatientDto
-        {
-            Id = p.Id,
-            FirstName = p.FirstName,
-            LastName = p.LastName,
-            DateOfBirth = p.DateOfBirth,
-            Gender = p.Gender,
-            Phone = p.Phone,
-            Email = p.Email,
-            Address = p.Address,
-            CreatedAt = p.CreatedAt
-        }).ToList();
+        return patients.Select(MapPatientToDto).ToList();
     }
 
     public async Task<PatientDto> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         var p = await _patientRepository.GetByIdAsync(id, cancellationToken);
         if (p == null) throw new NotFoundException(nameof(Patient), id);
-        return new PatientDto
-        {
-            Id = p.Id,
-            FirstName = p.FirstName,
-            LastName = p.LastName,
-            DateOfBirth = p.DateOfBirth,
-            Gender = p.Gender,
-            Phone = p.Phone,
-            Email = p.Email,
-            Address = p.Address,
-            CreatedAt = p.CreatedAt
-        };
+        return MapPatientToDto(p);
     }
 
     public async Task<PatientDto> CreateAsync(CreatePatientDto dto, CancellationToken cancellationToken = default)
     {
-        var p = new Patient
-        {
-            FirstName = dto.FirstName,
-            LastName = dto.LastName,
-            DateOfBirth = dto.DateOfBirth,
-            Gender = dto.Gender,
-            Phone = dto.Phone,
-            Email = dto.Email,
-            Address = dto.Address,
-            CreatedAt = DateTime.UtcNow
-        };
-        var created = await _patientRepository.AddAsync(p, cancellationToken);
-        return new PatientDto
-        {
-            Id = created.Id,
-            FirstName = created.FirstName,
-            LastName = created.LastName,
-            DateOfBirth = created.DateOfBirth,
-            Gender = created.Gender,
-            Phone = created.Phone,
-            Email = created.Email,
-            Address = created.Address,
-            CreatedAt = created.CreatedAt
-        };
+        // Domain Entity enforces valid demographics and birth date in past
+        var patient = Patient.Create(
+            dto.FirstName,
+            dto.LastName,
+            dto.DateOfBirth,
+            dto.Gender,
+            dto.Phone,
+            dto.Email,
+            dto.Address);
+
+        var created = await _patientRepository.AddAsync(patient, cancellationToken);
+        return MapPatientToDto(created);
     }
 
     public async Task<PatientDto> UpdateAsync(int id, UpdatePatientDto dto, CancellationToken cancellationToken = default)
     {
-        var p = await _patientRepository.GetByIdAsync(id, cancellationToken);
-        if (p == null) throw new NotFoundException(nameof(Patient), id);
+        var patient = await _patientRepository.GetByIdAsync(id, cancellationToken);
+        if (patient == null) throw new NotFoundException(nameof(Patient), id);
 
-        p.FirstName = dto.FirstName;
-        p.LastName = dto.LastName;
-        p.DateOfBirth = dto.DateOfBirth;
-        p.Gender = dto.Gender;
-        p.Phone = dto.Phone;
-        p.Email = dto.Email;
-        p.Address = dto.Address;
+        patient.Update(
+            dto.FirstName,
+            dto.LastName,
+            dto.DateOfBirth,
+            dto.Gender,
+            dto.Phone,
+            dto.Email,
+            dto.Address);
 
-        await _patientRepository.UpdateAsync(p, cancellationToken);
-        return new PatientDto
-        {
-            Id = p.Id,
-            FirstName = p.FirstName,
-            LastName = p.LastName,
-            DateOfBirth = p.DateOfBirth,
-            Gender = p.Gender,
-            Phone = p.Phone,
-            Email = p.Email,
-            Address = p.Address,
-            CreatedAt = p.CreatedAt
-        };
+        await _patientRepository.UpdateAsync(patient, cancellationToken);
+        return MapPatientToDto(patient);
     }
 
     public async Task DeleteAsync(int id, CancellationToken cancellationToken = default)
@@ -300,6 +247,19 @@ public class PatientService : IPatientService
         if (p == null) throw new NotFoundException(nameof(Patient), id);
         await _patientRepository.DeleteAsync(p, cancellationToken);
     }
+
+    private static PatientDto MapPatientToDto(Patient p) => new()
+    {
+        Id = p.Id,
+        FirstName = p.FirstName,
+        LastName = p.LastName,
+        DateOfBirth = p.DateOfBirth,
+        Gender = p.Gender,
+        Phone = p.Phone,
+        Email = p.Email,
+        Address = p.Address,
+        CreatedAt = p.CreatedAt
+    };
 }
 
 // ==============================================================================
@@ -365,16 +325,14 @@ public class DoctorService : IDoctorService
         var dept = await _departmentRepository.GetByIdAsync(dto.DepartmentId, cancellationToken);
         if (dept == null) throw new NotFoundException(nameof(Department), dto.DepartmentId);
 
-        var doctor = new Doctor
-        {
-            FirstName = dto.FirstName,
-            LastName = dto.LastName,
-            Specialization = dto.Specialization,
-            Phone = dto.Phone,
-            Email = dto.Email,
-            DepartmentId = dto.DepartmentId,
-            CreatedAt = DateTime.UtcNow
-        };
+        var doctor = Doctor.Create(
+            dto.FirstName,
+            dto.LastName,
+            dto.Specialization,
+            dto.Phone,
+            dto.Email,
+            dto.DepartmentId);
+
         var created = await _doctorRepository.AddAsync(doctor, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("doctors:", cancellationToken);
 
@@ -400,12 +358,13 @@ public class DoctorService : IDoctorService
         var dept = await _departmentRepository.GetByIdAsync(dto.DepartmentId, cancellationToken);
         if (dept == null) throw new NotFoundException(nameof(Department), dto.DepartmentId);
 
-        doctor.FirstName = dto.FirstName;
-        doctor.LastName = dto.LastName;
-        doctor.Specialization = dto.Specialization;
-        doctor.Phone = dto.Phone;
-        doctor.Email = dto.Email;
-        doctor.DepartmentId = dto.DepartmentId;
+        doctor.Update(
+            dto.FirstName,
+            dto.LastName,
+            dto.Specialization,
+            dto.Phone,
+            dto.Email,
+            dto.DepartmentId);
 
         await _doctorRepository.UpdateAsync(doctor, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("doctors:", cancellationToken);
@@ -469,7 +428,7 @@ public class DepartmentService : IDepartmentService
 
     public async Task<DepartmentDto> CreateAsync(CreateDepartmentDto dto, CancellationToken cancellationToken = default)
     {
-        var dept = new Department { Name = dto.Name, Description = dto.Description };
+        var dept = Department.Create(dto.Name, dto.Description);
         var created = await _departmentRepository.AddAsync(dept, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("departments:", cancellationToken);
         return new DepartmentDto { Id = created.Id, Name = created.Name, Description = created.Description };
@@ -480,8 +439,7 @@ public class DepartmentService : IDepartmentService
         var dept = await _departmentRepository.GetByIdAsync(id, cancellationToken);
         if (dept == null) throw new NotFoundException(nameof(Department), id);
 
-        dept.Name = dto.Name;
-        dept.Description = dto.Description;
+        dept.Update(dto.Name, dto.Description);
         await _departmentRepository.UpdateAsync(dept, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("departments:", cancellationToken);
         return new DepartmentDto { Id = dept.Id, Name = dept.Name, Description = dept.Description };
@@ -546,16 +504,14 @@ public class MedicalRecordService : IMedicalRecordService
         var doctor = await _doctorRepository.GetByIdAsync(dto.DoctorId, cancellationToken);
         if (doctor == null) throw new NotFoundException(nameof(Doctor), dto.DoctorId);
 
-        var record = new MedicalRecord
-        {
-            PatientId = dto.PatientId,
-            DoctorId = dto.DoctorId,
-            Diagnosis = dto.Diagnosis,
-            Symptoms = dto.Symptoms,
-            Treatment = dto.Treatment,
-            Notes = dto.Notes,
-            CreatedAt = DateTime.UtcNow
-        };
+        var record = MedicalRecord.Create(
+            dto.PatientId,
+            dto.DoctorId,
+            null,
+            dto.Diagnosis,
+            dto.Symptoms,
+            dto.Treatment,
+            dto.Notes);
 
         var created = await _medicalRecordRepository.AddAsync(record, cancellationToken);
         created.Patient = patient;
@@ -568,10 +524,7 @@ public class MedicalRecordService : IMedicalRecordService
         var record = await _medicalRecordRepository.GetByIdAsync(id, cancellationToken);
         if (record == null) throw new NotFoundException(nameof(MedicalRecord), id);
 
-        record.Diagnosis = dto.Diagnosis;
-        record.Symptoms = dto.Symptoms;
-        record.Treatment = dto.Treatment;
-        record.Notes = dto.Notes;
+        record.Update(dto.Diagnosis, dto.Symptoms, dto.Treatment, dto.Notes);
 
         await _medicalRecordRepository.UpdateAsync(record, cancellationToken);
         return MapToDto(record);
@@ -635,32 +588,27 @@ public class PrescriptionService : IPrescriptionService
 
     public async Task<PrescriptionDto> CreateAsync(CreatePrescriptionDto dto, CancellationToken cancellationToken = default)
     {
-        if (dto.Items == null || !dto.Items.Any())
-            throw new BusinessRuleException("A prescription must contain at least one prescription item.");
-
         var patient = await _patientRepository.GetByIdAsync(dto.PatientId, cancellationToken);
         if (patient == null) throw new NotFoundException(nameof(Patient), dto.PatientId);
 
         var doctor = await _doctorRepository.GetByIdAsync(dto.DoctorId, cancellationToken);
         if (doctor == null) throw new NotFoundException(nameof(Doctor), dto.DoctorId);
 
-        var prescription = new Prescription
-        {
-            PatientId = dto.PatientId,
-            DoctorId = dto.DoctorId,
-            AppointmentId = dto.AppointmentId,
-            PrescriptionDate = DateTime.UtcNow,
-            Notes = dto.Notes,
-            CreatedAt = DateTime.UtcNow,
-            PrescriptionItems = dto.Items.Select(item => new PrescriptionItem
-            {
-                MedicationName = item.MedicationName,
-                Dosage = item.Dosage,
-                Frequency = item.Frequency,
-                Duration = item.Duration,
-                Instructions = item.Instructions
-            }).ToList()
-        };
+        var items = dto.Items.Select(item =>
+            PrescriptionItem.Create(
+                item.MedicationName,
+                item.Dosage,
+                item.Frequency,
+                item.Duration,
+                item.Instructions)).ToList();
+
+        // Domain Aggregate Root enforces at least one medication item and ddd structure
+        var prescription = Prescription.Create(
+            dto.PatientId,
+            dto.DoctorId,
+            dto.AppointmentId,
+            items,
+            dto.Notes);
 
         var created = await _prescriptionRepository.AddAsync(prescription, cancellationToken);
         created.Patient = patient;
@@ -673,19 +621,15 @@ public class PrescriptionService : IPrescriptionService
         var p = await _prescriptionRepository.GetByIdAsync(id, cancellationToken);
         if (p == null) throw new NotFoundException(nameof(Prescription), id);
 
-        if (dto.Items == null || !dto.Items.Any())
-            throw new BusinessRuleException("A prescription must contain at least one prescription item.");
+        var items = dto.Items.Select(item =>
+            PrescriptionItem.Create(
+                item.MedicationName,
+                item.Dosage,
+                item.Frequency,
+                item.Duration,
+                item.Instructions)).ToList();
 
-        p.Notes = dto.Notes;
-        p.PrescriptionItems = dto.Items.Select(item => new PrescriptionItem
-        {
-            PrescriptionId = id,
-            MedicationName = item.MedicationName,
-            Dosage = item.Dosage,
-            Frequency = item.Frequency,
-            Duration = item.Duration,
-            Instructions = item.Instructions
-        }).ToList();
+        p.Update(dto.Notes, items);
 
         await _prescriptionRepository.UpdateAsync(p, cancellationToken);
         return MapToDto(p);
@@ -739,36 +683,37 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto dto, CancellationToken cancellationToken = default)
     {
-        var normalized = dto.UsernameOrEmail.Trim().ToLower();
-        var user = await _userRepository.GetByUsernameAsync(normalized, cancellationToken);
-        if (user == null || !_passwordHasher.VerifyPasswordHash(dto.Password, user.PasswordHash, user.PasswordSalt))
-        {
+        var identifier = dto.UsernameOrEmail.Trim().ToLowerInvariant();
+        var user = await _userRepository.GetByUsernameAsync(identifier, cancellationToken)
+                   ?? await _userRepository.GetByEmailAsync(identifier, cancellationToken);
+
+        if (user == null)
             throw new BusinessRuleException("Invalid username or password.");
-        }
+
+        if (!_passwordHasher.VerifyPasswordHash(dto.Password, user.PasswordHash, user.PasswordSalt))
+            throw new BusinessRuleException("Invalid username or password.");
 
         return GenerateAuthResponse(user);
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterRequestDto dto, CancellationToken cancellationToken = default)
     {
-        if (await _userRepository.UsernameExistsAsync(dto.Username.Trim().ToLower(), cancellationToken))
+        if (await _userRepository.UsernameExistsAsync(dto.Username.Trim().ToLowerInvariant(), cancellationToken))
             throw new ConflictException($"Username '{dto.Username}' is already taken.");
 
-        if (await _userRepository.EmailExistsAsync(dto.Email.Trim().ToLower(), cancellationToken))
+        if (await _userRepository.EmailExistsAsync(dto.Email.Trim().ToLowerInvariant(), cancellationToken))
             throw new ConflictException($"Email '{dto.Email}' is already registered.");
 
         _passwordHasher.CreatePasswordHash(dto.Password, out var hash, out var salt);
 
-        var user = new User
-        {
-            Username = dto.Username.Trim(),
-            Email = dto.Email.Trim(),
-            FullName = dto.FullName.Trim(),
-            PasswordHash = hash,
-            PasswordSalt = salt,
-            Role = dto.Role,
-            CreatedAt = DateTime.UtcNow
-        };
+        // Domain Entity creates user
+        var user = User.Create(
+            dto.Username,
+            dto.Email,
+            dto.FullName,
+            hash,
+            salt,
+            dto.Role);
 
         var created = await _userRepository.AddAsync(user, cancellationToken);
         return GenerateAuthResponse(created);

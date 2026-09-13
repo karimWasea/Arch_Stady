@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.DTOs.Auth;
+using HospitalManagement.Application.DTOs.Auth;
 using HospitalManagement.Application.Interfaces.Repositories;
 using HospitalManagement.Application.Security;
 using HospitalManagement.Application.Services.Clinical;
@@ -41,16 +41,7 @@ public class AuthUseCasesTests
     {
         // Arrange
         _passwordHasher.CreatePasswordHash("Password123!", out var hash, out var salt);
-        var user = new User
-        {
-            Id = 1,
-            Username = "staff1",
-            Email = "staff1@hospital.com",
-            FullName = "Staff Member",
-            PasswordHash = hash,
-            PasswordSalt = salt,
-            Role = UserRole.Staff
-        };
+        var user = User.Create("staff1", "staff1@hospital.com", "Staff Member", hash, salt, UserRole.Staff).SetId(1);
 
         _userRepoMock.Setup(r => r.GetByUsernameAsync("staff1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
@@ -72,14 +63,7 @@ public class AuthUseCasesTests
     {
         // Arrange
         _passwordHasher.CreatePasswordHash("CorrectPassword", out var hash, out var salt);
-        var user = new User
-        {
-            Id = 1,
-            Username = "staff1",
-            Email = "staff1@hospital.com",
-            PasswordHash = hash,
-            PasswordSalt = salt
-        };
+        var user = User.Create("staff1", "staff1@hospital.com", "Staff Member", hash, salt, UserRole.Staff).SetId(1);
 
         _userRepoMock.Setup(r => r.GetByUsernameAsync("staff1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);

@@ -3,11 +3,13 @@ using HospitalManagement.Application.Interfaces.Caching;
 using HospitalManagement.Application.Interfaces.Repositories;
 using HospitalManagement.Domain.Entities.Clinical;
 using HospitalManagement.Domain.Entities.Pharmacy;
-using HospitalManagement.Domain.Enums;
 using HospitalManagement.Domain.Exceptions;
 
 namespace HospitalManagement.Application.Services.Pharmacy;
 
+/// <summary>
+/// Application Service for pharmacy catalog, warehouse inventory, and medication dispensing orchestration.
+/// </summary>
 public class PharmacyService : IPharmacyService
 {
     private readonly IMedicineRepository _medicineRepository;
@@ -65,7 +67,7 @@ public class PharmacyService : IPharmacyService
         var m = await _medicineRepository.GetByIdAsync(id, cancellationToken);
         if (m == null) throw new NotFoundException(nameof(Medicine), id);
 
-        var totalStock = await _stockRepository.GetTotalStockQuantityAsync(m.Id, cancellationToken);
+        var totalStock = await _stockRepository.GetTotalStockQuantityAsync(id, cancellationToken);
         return new MedicineDto
         {
             Id = m.Id,
@@ -85,16 +87,14 @@ public class PharmacyService : IPharmacyService
         var existing = await _medicineRepository.GetBySkuAsync(dto.Sku, cancellationToken);
         if (existing != null) throw new ConflictException($"Medicine with SKU '{dto.Sku}' already exists.");
 
-        var medicine = new Medicine
-        {
-            Name = dto.Name,
-            GenericName = dto.GenericName,
-            Sku = dto.Sku,
-            DosageForm = dto.DosageForm,
-            UnitPrice = dto.UnitPrice,
-            Manufacturer = dto.Manufacturer,
-            CreatedAt = DateTime.UtcNow
-        };
+        // Domain Entity enforces valid name, SKU, and positive price
+        var medicine = Medicine.Create(
+            dto.Name,
+            dto.GenericName,
+            dto.Sku,
+            dto.DosageForm,
+            dto.UnitPrice,
+            dto.Manufacturer);
 
         var created = await _medicineRepository.AddAsync(medicine, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("pharmacy:", cancellationToken);
@@ -118,12 +118,13 @@ public class PharmacyService : IPharmacyService
         var medicine = await _medicineRepository.GetByIdAsync(id, cancellationToken);
         if (medicine == null) throw new NotFoundException(nameof(Medicine), id);
 
-        medicine.Name = dto.Name;
-        medicine.GenericName = dto.GenericName;
-        medicine.Sku = dto.Sku;
-        medicine.DosageForm = dto.DosageForm;
-        medicine.UnitPrice = dto.UnitPrice;
-        medicine.Manufacturer = dto.Manufacturer;
+        medicine.Update(
+            dto.Name,
+            dto.GenericName,
+            dto.Sku,
+            dto.DosageForm,
+            dto.UnitPrice,
+            dto.Manufacturer);
 
         await _medicineRepository.UpdateAsync(medicine, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("pharmacy:", cancellationToken);
@@ -169,16 +170,14 @@ public class PharmacyService : IPharmacyService
         var medicine = await _medicineRepository.GetByIdAsync(dto.MedicineId, cancellationToken);
         if (medicine == null) throw new NotFoundException(nameof(Medicine), dto.MedicineId);
 
-        var stock = new Stock
-        {
-            MedicineId = dto.MedicineId,
-            BatchNumber = dto.BatchNumber,
-            QuantityInStock = dto.Quantity,
-            ReorderLevel = dto.ReorderLevel,
-            ExpiryDate = dto.ExpiryDate,
-            Location = dto.Location,
-            LastUpdated = DateTime.UtcNow
-        };
+        // Domain Entity enforces batch number, non-negative quantities
+        var stock = Stock.Create(
+            dto.MedicineId,
+            dto.BatchNumber,
+            dto.Quantity,
+            dto.ReorderLevel,
+            dto.ExpiryDate,
+            dto.Location);
 
         var created = await _stockRepository.AddAsync(stock, cancellationToken);
         created.Medicine = medicine;
@@ -192,10 +191,7 @@ public class PharmacyService : IPharmacyService
         var stock = await _stockRepository.GetByIdAsync(id, cancellationToken);
         if (stock == null) throw new NotFoundException(nameof(Stock), id);
 
-        stock.QuantityInStock = dto.QuantityInStock;
-        stock.ReorderLevel = dto.ReorderLevel;
-        stock.Location = dto.Location;
-        stock.LastUpdated = DateTime.UtcNow;
+        stock.UpdateDetails(dto.QuantityInStock, dto.ReorderLevel, dto.Location);
 
         await _stockRepository.UpdateAsync(stock, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("pharmacy:", cancellationToken);
@@ -218,16 +214,12 @@ public class PharmacyService : IPharmacyService
 
     public async Task<DispensingOrderDto> DispenseOrderAsync(DispenseOrderRequestDto dto, CancellationToken cancellationToken = default)
     {
-        if (dto.Items == null || !dto.Items.Any())
-            throw new BusinessRuleException("Dispensing order must contain at least one item.");
-
         var patient = await _patientRepository.GetByIdAsync(dto.PatientId, cancellationToken);
         if (patient == null) throw new NotFoundException(nameof(Patient), dto.PatientId);
 
-        decimal totalAmount = 0m;
         var orderItems = new List<DispensingOrderItem>();
 
-        // 1. Verify availability and calculate costs
+        // 1. Verify availability and create domain order line items
         foreach (var item in dto.Items)
         {
             var medicine = await _medicineRepository.GetByIdAsync(item.MedicineId, cancellationToken);
@@ -239,37 +231,23 @@ public class PharmacyService : IPharmacyService
                 throw new BusinessRuleException($"Insufficient stock for medicine '{medicine.Name}'. Requested: {item.Quantity}, Available: {availableStock}");
             }
 
-            var subTotal = medicine.UnitPrice * item.Quantity;
-            totalAmount += subTotal;
-
-            orderItems.Add(new DispensingOrderItem
-            {
-                MedicineId = item.MedicineId,
-                Medicine = medicine,
-                Quantity = item.Quantity,
-                UnitPrice = medicine.UnitPrice,
-                SubTotal = subTotal
-            });
+            // Domain line item calculates subtotal
+            orderItems.Add(DispensingOrderItem.Create(item.MedicineId, item.Quantity, medicine.UnitPrice));
         }
 
-        // 2. Deduct inventory across stocks
+        // 2. Deduct inventory across batches via repository
         foreach (var item in dto.Items)
         {
             await _stockRepository.DeductStockQuantityAsync(item.MedicineId, item.Quantity, cancellationToken);
         }
 
-        // 3. Create Dispensing Order
-        var order = new DispensingOrder
-        {
-            PatientId = dto.PatientId,
-            DoctorId = dto.DoctorId,
-            PrescriptionId = dto.PrescriptionId,
-            DispensedDate = DateTime.UtcNow,
-            TotalAmount = totalAmount,
-            Status = DispensingStatus.Dispensed,
-            Notes = dto.Notes,
-            Items = orderItems
-        };
+        // 3. Create Dispensing Order Aggregate Root (calculates TotalAmount and sets status)
+        var order = DispensingOrder.Create(
+            dto.PatientId,
+            dto.DoctorId,
+            dto.PrescriptionId,
+            orderItems,
+            dto.Notes);
 
         var created = await _dispensingRepository.AddAsync(order, cancellationToken);
         created.Patient = patient;

@@ -4,11 +4,13 @@ using HospitalManagement.Application.Interfaces.Notifications;
 using HospitalManagement.Application.Interfaces.Repositories;
 using HospitalManagement.Domain.Entities.Clinical;
 using HospitalManagement.Domain.Entities.Laboratory;
-using HospitalManagement.Domain.Enums;
 using HospitalManagement.Domain.Exceptions;
 
 namespace HospitalManagement.Application.Services.Laboratory;
 
+/// <summary>
+/// Application Service for laboratory catalog, diagnostic requisitions, and results orchestration.
+/// </summary>
 public class LaboratoryService : ILaboratoryService
 {
     private readonly ILabTestRepository _labTestRepository;
@@ -45,7 +47,7 @@ public class LaboratoryService : ILaboratoryService
 
         var tests = await _labTestRepository.GetAllAsync(cancellationToken);
         var dtos = tests.Select(MapTestToDto).ToList();
-        await _cacheService.SetAsync(cacheKey, dtos, TimeSpan.FromMinutes(15), cancellationToken);
+        await _cacheService.SetAsync(cacheKey, dtos, TimeSpan.FromMinutes(10), cancellationToken);
         return dtos;
     }
 
@@ -61,16 +63,15 @@ public class LaboratoryService : ILaboratoryService
         var existing = await _labTestRepository.GetByCodeAsync(dto.Code, cancellationToken);
         if (existing != null) throw new ConflictException($"Lab test with code '{dto.Code}' already exists.");
 
-        var test = new LabTest
-        {
-            Code = dto.Code.Trim().ToUpper(),
-            Name = dto.Name,
-            Category = dto.Category,
-            NormalRange = dto.NormalRange,
-            UnitOfMeasure = dto.UnitOfMeasure,
-            Price = dto.Price,
-            Description = dto.Description
-        };
+        // Domain Entity enforces non-empty code, name, and non-negative price
+        var test = LabTest.Create(
+            dto.Code,
+            dto.Name,
+            dto.Category,
+            dto.NormalRange,
+            dto.UnitOfMeasure,
+            dto.Price,
+            dto.Description);
 
         var created = await _labTestRepository.AddAsync(test, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("lab:", cancellationToken);
@@ -82,13 +83,14 @@ public class LaboratoryService : ILaboratoryService
         var test = await _labTestRepository.GetByIdAsync(id, cancellationToken);
         if (test == null) throw new NotFoundException(nameof(LabTest), id);
 
-        test.Code = dto.Code.Trim().ToUpper();
-        test.Name = dto.Name;
-        test.Category = dto.Category;
-        test.NormalRange = dto.NormalRange;
-        test.UnitOfMeasure = dto.UnitOfMeasure;
-        test.Price = dto.Price;
-        test.Description = dto.Description;
+        test.Update(
+            dto.Code,
+            dto.Name,
+            dto.Category,
+            dto.NormalRange,
+            dto.UnitOfMeasure,
+            dto.Price,
+            dto.Description);
 
         await _labTestRepository.UpdateAsync(test, cancellationToken);
         await _cacheService.RemoveByPrefixAsync("lab:", cancellationToken);
@@ -128,38 +130,26 @@ public class LaboratoryService : ILaboratoryService
 
     public async Task<LabOrderDto> CreateLabOrderAsync(CreateLabOrderDto dto, CancellationToken cancellationToken = default)
     {
-        if (dto.TestIds == null || !dto.TestIds.Any())
-            throw new BusinessRuleException("Lab order must include at least one lab test.");
-
         var patient = await _patientRepository.GetByIdAsync(dto.PatientId, cancellationToken);
         if (patient == null) throw new NotFoundException(nameof(Patient), dto.PatientId);
 
         var doctor = await _doctorRepository.GetByIdAsync(dto.DoctorId, cancellationToken);
         if (doctor == null) throw new NotFoundException(nameof(Doctor), dto.DoctorId);
 
-        var orderItems = new List<LabOrderItem>();
+        // Verify each test exists
         foreach (var testId in dto.TestIds)
         {
             var test = await _labTestRepository.GetByIdAsync(testId, cancellationToken);
             if (test == null) throw new NotFoundException(nameof(LabTest), testId);
-
-            orderItems.Add(new LabOrderItem
-            {
-                LabTestId = testId,
-                LabTest = test
-            });
         }
 
-        var order = new LabOrder
-        {
-            PatientId = dto.PatientId,
-            DoctorId = dto.DoctorId,
-            OrderDate = DateTime.UtcNow,
-            Priority = dto.Priority,
-            Status = LabOrderStatus.Ordered,
-            ClinicalNotes = dto.ClinicalNotes,
-            Items = orderItems
-        };
+        // Domain Aggregate Root enforces at least one test and distinct tests
+        var order = LabOrder.Create(
+            dto.PatientId,
+            dto.DoctorId,
+            dto.Priority,
+            dto.TestIds,
+            dto.ClinicalNotes);
 
         var created = await _labOrderRepository.AddAsync(order, cancellationToken);
         created.Patient = patient;
@@ -182,34 +172,19 @@ public class LaboratoryService : ILaboratoryService
         var test = await _labTestRepository.GetByIdAsync(dto.LabTestId, cancellationToken);
         if (test == null) throw new NotFoundException(nameof(LabTest), dto.LabTestId);
 
-        var result = new LabResult
-        {
-            LabOrderId = dto.LabOrderId,
-            LabTestId = dto.LabTestId,
-            ResultValue = dto.ResultValue,
-            UnitOfMeasure = test.UnitOfMeasure,
-            NormalRange = test.NormalRange,
-            IsAbnormal = dto.IsAbnormal,
-            PerformedDate = DateTime.UtcNow,
-            PerformedBy = dto.PerformedBy,
-            Remarks = dto.Remarks
-        };
+        // Domain Aggregate Root encapsulates adding result and automatically determines InProgress vs Completed status!
+        var result = order.AddResult(
+            dto.LabTestId,
+            dto.ResultValue,
+            test.UnitOfMeasure,
+            test.NormalRange,
+            dto.IsAbnormal,
+            dto.PerformedBy,
+            dto.Remarks);
 
-        var created = await _labResultRepository.AddAsync(result, cancellationToken);
-        created.LabTest = test;
+        result.LabTest = test;
 
-        // Check if order is fully completed
-        var existingResults = await _labResultRepository.GetByOrderIdAsync(dto.LabOrderId, cancellationToken);
-        if (existingResults.Count() >= order.Items.Count)
-        {
-            order.Status = LabOrderStatus.Completed;
-            await _labOrderRepository.UpdateAsync(order, cancellationToken);
-        }
-        else
-        {
-            order.Status = LabOrderStatus.InProgress;
-            await _labOrderRepository.UpdateAsync(order, cancellationToken);
-        }
+        await _labOrderRepository.UpdateAsync(order, cancellationToken);
 
         // Notify patient if result is available
         if (order.Patient != null)
@@ -225,7 +200,7 @@ public class LaboratoryService : ILaboratoryService
             ), cancellationToken);
         }
 
-        return MapResultToDto(created);
+        return MapResultToDto(result);
     }
 
     private static LabTestDto MapTestToDto(LabTest t) => new()

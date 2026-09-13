@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.DTOs.Pharmacy;
+using HospitalManagement.Application.DTOs.Pharmacy;
 using HospitalManagement.Application.Interfaces.Caching;
 using HospitalManagement.Application.Interfaces.Repositories;
 using HospitalManagement.Application.Services.Pharmacy;
@@ -44,9 +44,9 @@ public class PharmacyServiceTests
         };
 
         _patientRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Patient { Id = 1, FirstName = "Alice", LastName = "Wonder" });
+            .ReturnsAsync(Patient.Create("Alice", "Wonder", new DateTime(1995, 1, 1), "Female", "123", "alice@wonder.com", "Wonderland").SetId(1));
 
-        var medicine = new Medicine { Id = 10, Name = "Amoxicillin", UnitPrice = 10m };
+        var medicine = Medicine.Create("Amoxicillin", "Amoxicillin", "SKU-AMOX", DosageForm.Capsule, 10m, "Pharma").SetId(10);
         _medicineRepoMock.Setup(r => r.GetByIdAsync(10, It.IsAny<CancellationToken>()))
             .ReturnsAsync(medicine);
 
@@ -74,8 +74,8 @@ public class PharmacyServiceTests
             }
         };
 
-        var patient = new Patient { Id = 1, FirstName = "Alice", LastName = "Wonder" };
-        var medicine = new Medicine { Id = 10, Name = "Amoxicillin", UnitPrice = 10m };
+        var patient = Patient.Create("Alice", "Wonder", new DateTime(1995, 1, 1), "Female", "123", "alice@wonder.com", "Wonderland").SetId(1);
+        var medicine = Medicine.Create("Amoxicillin", "Amoxicillin", "SKU-AMOX", DosageForm.Capsule, 10m, "Pharma").SetId(10);
 
         _patientRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(patient);
         _medicineRepoMock.Setup(r => r.GetByIdAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(medicine);
@@ -84,7 +84,7 @@ public class PharmacyServiceTests
         _dispensingRepoMock.Setup(r => r.AddAsync(It.IsAny<DispensingOrder>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((DispensingOrder o, CancellationToken _) =>
             {
-                o.Id = 77;
+                o.SetId(77);
                 o.Patient = patient;
                 return o;
             });

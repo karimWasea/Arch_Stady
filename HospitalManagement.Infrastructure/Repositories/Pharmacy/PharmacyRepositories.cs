@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.Interfaces.Repositories;
+using HospitalManagement.Application.Interfaces.Repositories;
 using HospitalManagement.Domain.Entities.Pharmacy;
 using HospitalManagement.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -122,17 +122,11 @@ public class StockRepository : IStockRepository
         {
             if (remainingToDeduct <= 0) break;
 
-            if (stock.QuantityInStock >= remainingToDeduct)
+            int deductFromThisBatch = Math.Min(stock.QuantityInStock, remainingToDeduct);
+            if (deductFromThisBatch > 0)
             {
-                stock.QuantityInStock -= remainingToDeduct;
-                stock.LastUpdated = DateTime.UtcNow;
-                remainingToDeduct = 0;
-            }
-            else
-            {
-                remainingToDeduct -= stock.QuantityInStock;
-                stock.QuantityInStock = 0;
-                stock.LastUpdated = DateTime.UtcNow;
+                stock.DeductQuantity(deductFromThisBatch);
+                remainingToDeduct -= deductFromThisBatch;
             }
         }
 

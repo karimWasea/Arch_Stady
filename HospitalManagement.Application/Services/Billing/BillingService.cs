@@ -2,13 +2,17 @@ using HospitalManagement.Application.DTOs.Billing;
 using HospitalManagement.Application.Interfaces.Caching;
 using HospitalManagement.Application.Interfaces.Notifications;
 using HospitalManagement.Application.Interfaces.Repositories;
-using HospitalManagement.Domain.Entities.Clinical;
 using HospitalManagement.Domain.Entities.Billing;
+using HospitalManagement.Domain.Entities.Clinical;
 using HospitalManagement.Domain.Enums;
 using HospitalManagement.Domain.Exceptions;
 
 namespace HospitalManagement.Application.Services.Billing;
 
+/// <summary>
+/// Application Service for billing, invoicing, and insurance orchestration.
+/// Coordinates persistence, external email notifications, and delegates financial invariants to the Domain model.
+/// </summary>
 public class BillingService : IBillingService
 {
     private readonly IInvoiceRepository _invoiceRepository;
@@ -51,16 +55,13 @@ public class BillingService : IBillingService
         if (!await _patientRepository.ExistsAsync(dto.PatientId, cancellationToken))
             throw new NotFoundException("Patient", dto.PatientId);
 
-        var insurance = new Insurance
-        {
-            PatientId = dto.PatientId,
-            ProviderName = dto.ProviderName,
-            PolicyNumber = dto.PolicyNumber,
-            CoveragePercentage = dto.CoveragePercentage,
-            MaxCoverageAmount = dto.MaxCoverageAmount,
-            ExpiryDate = dto.ExpiryDate,
-            IsActive = true
-        };
+        var insurance = Insurance.Create(
+            dto.PatientId,
+            dto.ProviderName,
+            dto.PolicyNumber,
+            dto.CoveragePercentage,
+            dto.MaxCoverageAmount,
+            dto.ExpiryDate);
 
         var created = await _insuranceRepository.AddAsync(insurance, cancellationToken);
         return MapInsuranceToDto(created);
@@ -71,12 +72,13 @@ public class BillingService : IBillingService
         var ins = await _insuranceRepository.GetByIdAsync(id, cancellationToken);
         if (ins == null) throw new NotFoundException(nameof(Insurance), id);
 
-        ins.ProviderName = dto.ProviderName;
-        ins.PolicyNumber = dto.PolicyNumber;
-        ins.CoveragePercentage = dto.CoveragePercentage;
-        ins.MaxCoverageAmount = dto.MaxCoverageAmount;
-        ins.ExpiryDate = dto.ExpiryDate;
-        ins.IsActive = dto.IsActive;
+        ins.UpdatePolicy(
+            dto.ProviderName,
+            dto.PolicyNumber,
+            dto.CoveragePercentage,
+            dto.MaxCoverageAmount,
+            dto.ExpiryDate,
+            dto.IsActive);
 
         await _insuranceRepository.UpdateAsync(ins, cancellationToken);
         return MapInsuranceToDto(ins);
@@ -109,27 +111,8 @@ public class BillingService : IBillingService
         var patient = await _patientRepository.GetByIdAsync(dto.PatientId, cancellationToken);
         if (patient == null) throw new NotFoundException("Patient", dto.PatientId);
 
-        if (dto.Items == null || !dto.Items.Any())
-            throw new BusinessRuleException("An invoice must contain at least one line item.");
-
-        decimal subTotal = 0m;
-        var invoiceItems = new List<InvoiceItem>();
-
-        foreach (var item in dto.Items)
-        {
-            var total = item.UnitPrice * item.Quantity;
-            subTotal += total;
-            invoiceItems.Add(new InvoiceItem
-            {
-                Description = item.Description,
-                Quantity = item.Quantity,
-                UnitPrice = item.UnitPrice,
-                TotalPrice = total
-            });
-        }
-
-        var taxAmount = subTotal * (dto.TaxPercentage / 100m);
-        var discountAmount = dto.DiscountAmount;
+        var invoiceItems = dto.Items.Select(item =>
+            InvoiceItem.Create(item.Description, item.Quantity, item.UnitPrice)).ToList();
 
         decimal insuranceCoverage = 0m;
         if (dto.ApplyInsurance)
@@ -137,31 +120,22 @@ public class BillingService : IBillingService
             var activeInsurance = await _insuranceRepository.GetActiveByPatientIdAsync(dto.PatientId, cancellationToken);
             if (activeInsurance != null)
             {
-                var calculatedCoverage = subTotal * (activeInsurance.CoveragePercentage / 100m);
-                insuranceCoverage = Math.Min(calculatedCoverage, activeInsurance.MaxCoverageAmount);
+                var rawSubTotal = invoiceItems.Sum(i => i.TotalPrice);
+                insuranceCoverage = activeInsurance.CalculateCoverage(rawSubTotal, DateTime.UtcNow);
             }
         }
 
-        var totalAmount = Math.Max(0m, (subTotal + taxAmount) - discountAmount - insuranceCoverage);
         var invoiceNumber = $"INV-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}";
 
-        var invoice = new Invoice
-        {
-            InvoiceNumber = invoiceNumber,
-            PatientId = dto.PatientId,
-            AppointmentId = dto.AppointmentId,
-            IssueDate = DateTime.UtcNow,
-            DueDate = DateTime.UtcNow.AddDays(30),
-            SubTotal = subTotal,
-            TaxAmount = taxAmount,
-            DiscountAmount = discountAmount,
-            InsuranceCoverageAmount = insuranceCoverage,
-            TotalAmount = totalAmount,
-            PaidAmount = 0m,
-            BalanceDue = totalAmount,
-            Status = totalAmount == 0m ? InvoiceStatus.Paid : InvoiceStatus.Pending,
-            Items = invoiceItems
-        };
+        // Domain Aggregate Root enforces line items, tax math, discount invariants, total, balance, and initial status
+        var invoice = Invoice.Create(
+            invoiceNumber,
+            dto.PatientId,
+            dto.AppointmentId,
+            invoiceItems,
+            dto.TaxPercentage,
+            dto.DiscountAmount,
+            insuranceCoverage);
 
         var created = await _invoiceRepository.AddAsync(invoice, cancellationToken);
         created.Patient = patient;
@@ -190,52 +164,25 @@ public class BillingService : IBillingService
         var invoice = await _invoiceRepository.GetByIdAsync(dto.InvoiceId, cancellationToken);
         if (invoice == null) throw new NotFoundException(nameof(Invoice), dto.InvoiceId);
 
-        if (invoice.Status == InvoiceStatus.Paid || invoice.BalanceDue <= 0m)
-            throw new BusinessRuleException("This invoice has already been fully paid.");
-
-        if (dto.Amount <= 0m)
-            throw new BusinessRuleException("Payment amount must be greater than zero.");
-
-        if (dto.Amount > invoice.BalanceDue)
-            throw new BusinessRuleException($"Payment amount ({dto.Amount:C}) exceeds balance due ({invoice.BalanceDue:C}).");
-
-        var payment = new Payment
-        {
-            InvoiceId = dto.InvoiceId,
-            PaymentDate = DateTime.UtcNow,
-            Amount = dto.Amount,
-            PaymentMethod = dto.PaymentMethod,
-            TransactionReference = dto.TransactionReference ?? $"TXN-{Guid.NewGuid().ToString()[..8].ToUpper()}",
-            Notes = dto.Notes
-        };
-
-        var created = await _paymentRepository.AddAsync(payment, cancellationToken);
-
-        // Update Invoice status & balances
-        invoice.PaidAmount += dto.Amount;
-        invoice.BalanceDue -= dto.Amount;
-
-        if (invoice.BalanceDue <= 0m)
-        {
-            invoice.Status = InvoiceStatus.Paid;
-        }
-        else
-        {
-            invoice.Status = InvoiceStatus.PartiallyPaid;
-        }
+        // Domain Aggregate Root enforces payment validation, balance deduction, and status transitions
+        var payment = invoice.AddPayment(
+            dto.Amount,
+            dto.PaymentMethod,
+            dto.TransactionReference,
+            dto.Notes);
 
         await _invoiceRepository.UpdateAsync(invoice, cancellationToken);
 
         return new PaymentDto
         {
-            Id = created.Id,
+            Id = payment.Id,
             InvoiceId = invoice.Id,
             InvoiceNumber = invoice.InvoiceNumber,
-            PaymentDate = created.PaymentDate,
-            Amount = created.Amount,
-            PaymentMethod = created.PaymentMethod,
-            TransactionReference = created.TransactionReference,
-            Notes = created.Notes
+            PaymentDate = payment.PaymentDate,
+            Amount = payment.Amount,
+            PaymentMethod = payment.PaymentMethod,
+            TransactionReference = payment.TransactionReference,
+            Notes = payment.Notes
         };
     }
 

@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.DTOs.Clinical;
+using HospitalManagement.Application.DTOs.Clinical;
 using HospitalManagement.Application.Interfaces.Caching;
 using HospitalManagement.Application.Interfaces.Repositories;
 using HospitalManagement.Application.Services.Clinical;
@@ -55,7 +55,7 @@ public class DoctorUseCasesCacheTests
 
         var dbDoctors = new List<Doctor>
         {
-            new() { Id = 10, FirstName = "Gregory", LastName = "House", Specialization = "Diagnostics" }
+            Doctor.Create("Gregory", "House", "Diagnostics", "555-0000", "house@hospital.org", 1).SetId(10)
         };
 
         _doctorRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
@@ -94,12 +94,12 @@ public class DoctorUseCasesCacheTests
         };
 
         _departmentRepoMock.Setup(d => d.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Department { Id = 1, Name = "Oncology" });
+            .ReturnsAsync(Department.Create("Oncology", "Cancer care").SetId(1));
 
         _doctorRepoMock.Setup(r => r.AddAsync(It.IsAny<Doctor>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Doctor d, CancellationToken _) =>
             {
-                d.Id = 5;
+                d.SetId(5);
                 return d;
             });
 

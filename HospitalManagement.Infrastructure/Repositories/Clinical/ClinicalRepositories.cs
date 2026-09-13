@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.Interfaces.Repositories;
+using HospitalManagement.Application.Interfaces.Repositories;
 using HospitalManagement.Domain.Entities.Clinical;
 using HospitalManagement.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -353,6 +353,12 @@ public class UserRepository : IUserRepository
     {
         return await _context.Users
             .FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower(), cancellationToken);
+    }
+
+    public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        return await _context.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower(), cancellationToken);
     }
 
     public async Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken = default)

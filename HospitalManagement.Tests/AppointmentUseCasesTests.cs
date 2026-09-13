@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.DTOs.Clinical;
+using HospitalManagement.Application.DTOs.Clinical;
 using HospitalManagement.Application.Interfaces.Caching;
 using HospitalManagement.Application.Interfaces.Notifications;
 using HospitalManagement.Application.Interfaces.Repositories;
@@ -43,10 +43,10 @@ public class AppointmentServiceTests
         };
 
         _patientRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Patient { Id = 1, FirstName = "John", LastName = "Doe" });
+            .ReturnsAsync(Patient.Create("John", "Doe", new DateTime(1990, 1, 1), "Male", "123", "john@example.com", "Addr").SetId(1));
 
         _doctorRepoMock.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Doctor { Id = 2, FirstName = "Sarah", LastName = "Smith" });
+            .ReturnsAsync(Doctor.Create("Sarah", "Smith", "Cardiologist", "123", "sarah@hospital.org", 1).SetId(2));
 
         _appointmentRepoMock.Setup(r => r.HasDoctorConflictAsync(2, appointmentDate, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -72,8 +72,8 @@ public class AppointmentServiceTests
             Notes = "Checkup"
         };
 
-        var patient = new Patient { Id = 1, FirstName = "John", LastName = "Doe", Email = "john@example.com" };
-        var doctor = new Doctor { Id = 2, FirstName = "Sarah", LastName = "Smith", Specialization = "Cardiologist", Email = "sarah@hospital.org" };
+        var patient = Patient.Create("John", "Doe", new DateTime(1990, 1, 1), "Male", "123", "john@example.com", "Addr").SetId(1);
+        var doctor = Doctor.Create("Sarah", "Smith", "Cardiologist", "123", "sarah@hospital.org", 1).SetId(2);
 
         _patientRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(patient);
         _doctorRepoMock.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync(doctor);
@@ -83,7 +83,7 @@ public class AppointmentServiceTests
         _appointmentRepoMock.Setup(r => r.AddAsync(It.IsAny<Appointment>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Appointment a, CancellationToken _) =>
             {
-                a.Id = 10;
+                a.SetId(10);
                 a.Patient = patient;
                 a.Doctor = doctor;
                 return a;
@@ -110,16 +110,11 @@ public class AppointmentServiceTests
     public async Task CancelAsync_WhenValid_UpdatesStatusAndSendsCancellationEmail()
     {
         // Arrange
-        var appointment = new Appointment
-        {
-            Id = 5,
-            PatientId = 1,
-            DoctorId = 2,
-            AppointmentDate = DateTime.UtcNow.AddDays(1),
-            Status = AppointmentStatus.Scheduled,
-            Patient = new Patient { Id = 1, FirstName = "John", LastName = "Doe", Email = "john@example.com" },
-            Doctor = new Doctor { Id = 2, FirstName = "Sarah", LastName = "Smith", Specialization = "Cardiologist" }
-        };
+        var patient = Patient.Create("John", "Doe", new DateTime(1990, 1, 1), "Male", "123", "john@example.com", "Addr").SetId(1);
+        var doctor = Doctor.Create("Sarah", "Smith", "Cardiologist", "123", "sarah@hospital.org", 1).SetId(2);
+        var appointment = Appointment.Create(1, 2, DateTime.UtcNow.AddDays(1), "Routine").SetId(5);
+        appointment.Patient = patient;
+        appointment.Doctor = doctor;
 
         _appointmentRepoMock.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
             .ReturnsAsync(appointment);

@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.DTOs.Laboratory;
+using HospitalManagement.Application.DTOs.Laboratory;
 using HospitalManagement.Application.Interfaces.Caching;
 using HospitalManagement.Application.Interfaces.Notifications;
 using HospitalManagement.Application.Interfaces.Repositories;
@@ -46,10 +46,10 @@ public class LaboratoryServiceTests
             TestIds = new List<int> { 101, 102 }
         };
 
-        var patient = new Patient { Id = 1, FirstName = "Bruce", LastName = "Wayne" };
-        var doctor = new Doctor { Id = 2, FirstName = "Thomas", LastName = "Wayne" };
-        var test1 = new LabTest { Id = 101, Code = "CBC", Name = "Blood Count" };
-        var test2 = new LabTest { Id = 102, Code = "GLU", Name = "Glucose" };
+        var patient = Patient.Create("Bruce", "Wayne", new DateTime(1980, 1, 1), "Male", "123", "bruce@waynecorp.com", "Gotham").SetId(1);
+        var doctor = Doctor.Create("Thomas", "Wayne", "Surgeon", "123", "thomas@waynecorp.com", 1).SetId(2);
+        var test1 = LabTest.Create("CBC", "Blood Count", "Hematology", "Normal", "K/uL", 50m).SetId(101);
+        var test2 = LabTest.Create("GLU", "Glucose", "Metabolic", "70-99", "mg/dL", 30m).SetId(102);
 
         _patientRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(patient);
         _doctorRepoMock.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync(doctor);
@@ -59,7 +59,7 @@ public class LaboratoryServiceTests
         _labOrderRepoMock.Setup(r => r.AddAsync(It.IsAny<LabOrder>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((LabOrder o, CancellationToken _) =>
             {
-                o.Id = 88;
+                o.SetId(88);
                 o.Patient = patient;
                 o.Doctor = doctor;
                 return o;
@@ -91,9 +91,10 @@ public class LaboratoryServiceTests
             Remarks = "High blood sugar alert"
         };
 
-        var patient = new Patient { Id = 1, FirstName = "Bruce", LastName = "Wayne", Email = "bruce@waynecorp.com" };
-        var order = new LabOrder { Id = 50, PatientId = 1, Patient = patient, Status = LabOrderStatus.Ordered };
-        var test = new LabTest { Id = 101, Name = "Fasting Glucose" };
+        var patient = Patient.Create("Bruce", "Wayne", new DateTime(1980, 1, 1), "Male", "123", "bruce@waynecorp.com", "Gotham").SetId(1);
+        var test = LabTest.Create("GLU", "Fasting Glucose", "Metabolic", "70-99", "mg/dL", 30m).SetId(101);
+        var order = LabOrder.Create(1, 2, LabPriority.Routine, new[] { 101 }).SetId(50);
+        order.Patient = patient;
 
         _labOrderRepoMock.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>())).ReturnsAsync(order);
         _labTestRepoMock.Setup(r => r.GetByIdAsync(101, It.IsAny<CancellationToken>())).ReturnsAsync(test);
@@ -101,7 +102,7 @@ public class LaboratoryServiceTests
         _labResultRepoMock.Setup(r => r.AddAsync(It.IsAny<LabResult>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((LabResult r, CancellationToken _) =>
             {
-                r.Id = 999;
+                r.SetId(999);
                 r.LabTest = test;
                 return r;
             });

@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Domain.Entities.Clinical;
+using HospitalManagement.Domain.Entities.Clinical;
 using HospitalManagement.Domain.Enums;
 using HospitalManagement.Infrastructure.Data;
 using HospitalManagement.Infrastructure.Repositories.Clinical;
@@ -23,17 +23,7 @@ public class PersistenceRepositoryTests
         using var context = CreateInMemoryContext(nameof(PatientRepository_AddAndGetById_WorksSuccessfully));
         var repo = new PatientRepository(context);
 
-        var patient = new Patient
-        {
-            FirstName = "Michael",
-            LastName = "Scott",
-            DateOfBirth = new DateTime(1965, 3, 15),
-            Gender = "Male",
-            Phone = "555-0199",
-            Email = "m.scott@dunder.com",
-            Address = "Scranton, PA",
-            CreatedAt = DateTime.UtcNow
-        };
+        var patient = Patient.Create("Michael", "Scott", new DateTime(1965, 3, 15, 0, 0, 0, DateTimeKind.Utc), "Male", "555-0199", "m.scott@dunder.com", "Scranton, PA");
 
         // Act
         var added = await repo.AddAsync(patient);
@@ -54,14 +44,7 @@ public class PersistenceRepositoryTests
 
         var slotTime = new DateTime(2026, 10, 15, 10, 0, 0, DateTimeKind.Utc);
 
-        var appointment = new Appointment
-        {
-            PatientId = 10,
-            DoctorId = 20,
-            AppointmentDate = slotTime,
-            Status = AppointmentStatus.Scheduled,
-            CreatedAt = DateTime.UtcNow
-        };
+        var appointment = Appointment.Create(10, 20, slotTime);
         await repo.AddAsync(appointment);
 
         // Act

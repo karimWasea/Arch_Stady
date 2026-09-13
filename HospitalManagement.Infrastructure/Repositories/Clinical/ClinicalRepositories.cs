@@ -19,7 +19,7 @@ public class AppointmentRepository : IAppointmentRepository
         return await _context.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
-                .ThenInclude(d => d.Department)
+                .ThenInclude(d => d!.Department)
             .OrderByDescending(a => a.AppointmentDate)
             .ToListAsync(cancellationToken);
     }
@@ -29,7 +29,7 @@ public class AppointmentRepository : IAppointmentRepository
         return await _context.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
-                .ThenInclude(d => d.Department)
+                .ThenInclude(d => d!.Department)
             .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
     }
 

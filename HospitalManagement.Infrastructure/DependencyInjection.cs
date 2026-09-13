@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.Interfaces.Caching;
+using HospitalManagement.Application.Interfaces.Caching;
 using HospitalManagement.Application.Interfaces.Common;
 using HospitalManagement.Application.Interfaces.Notifications;
 using HospitalManagement.Application.Interfaces.Repositories;
@@ -57,6 +57,9 @@ public static class DependencyInjection
         // Caching & Email
         services.AddSingleton<ICacheService, RedisCacheService>();
         services.AddScoped<IEmailService, EmailService>();
+
+        // Database Initializer (implements Application layer's IDbInitializer)
+        services.AddScoped<IDbInitializer, DatabaseInitializer>();
 
         return services;
     }

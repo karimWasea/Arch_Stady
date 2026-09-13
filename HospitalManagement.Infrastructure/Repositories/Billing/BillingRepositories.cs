@@ -1,4 +1,4 @@
-﻿using HospitalManagement.Application.Interfaces.Repositories;
+using HospitalManagement.Application.Interfaces.Repositories;
 using HospitalManagement.Domain.Entities.Billing;
 using HospitalManagement.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -80,7 +80,7 @@ public class PaymentRepository : IPaymentRepository
     {
         return await _context.Payments
             .Include(p => p.Invoice)
-                .ThenInclude(inv => inv.Patient)
+                .ThenInclude(inv => inv!.Patient)
             .OrderByDescending(p => p.PaymentDate)
             .ToListAsync(cancellationToken);
     }
@@ -89,7 +89,7 @@ public class PaymentRepository : IPaymentRepository
     {
         return await _context.Payments
             .Include(p => p.Invoice)
-                .ThenInclude(inv => inv.Patient)
+                .ThenInclude(inv => inv!.Patient)
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
     }
 

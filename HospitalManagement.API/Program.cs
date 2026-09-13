@@ -1,10 +1,9 @@
-﻿using System.Text;
+using System.Reflection;
+using System.Text;
 using HospitalManagement.Application;
+using HospitalManagement.Application.Interfaces.Common;
 using HospitalManagement.API.Middleware;
-using HospitalManagement.Infrastructure;
-using HospitalManagement.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -17,8 +16,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Middle Ring: Application Layer (Use Cases, Application Services, Validators)
 builder.Services.AddApplication();
 
-// Outer Ring: Infrastructure Layer (EF Core, SQL Server, Redis Cache, Email)
-builder.Services.AddInfrastructure(builder.Configuration);
+// Outer Ring: Infrastructure Layer (Loaded dynamically - ZERO compile-time coupling to API)
+RegisterInfrastructureServices(builder.Services, builder.Configuration);
 
 // ==============================================================================
 // 2. AUTHENTICATION & AUTHORIZATION (JWT)
@@ -137,27 +136,34 @@ app.UseAuthorization();
 app.MapControllers();
 
 // ==============================================================================
-// 6. DATABASE INITIALIZATION & SEEDING
+// 6. DATABASE INITIALIZATION & SEEDING (via Application layer IDbInitializer)
 // ==============================================================================
 using (var scope = app.Services.CreateScope())
 {
-    var services = scope.ServiceProvider;
-    var logger = services.GetRequiredService<ILogger<Program>>();
-    try
+    var dbInitializer = scope.ServiceProvider.GetService<IDbInitializer>();
+    if (dbInitializer != null)
     {
-        var context = services.GetRequiredService<ApplicationDbContext>();
-        logger.LogInformation("Ensuring database is created with updated Onion schema...");
-        await context.Database.EnsureCreatedAsync();
-        logger.LogInformation("Database ready.");
-
-        logger.LogInformation("Seeding database...");
-        await DbInitializer.SeedAsync(context);
-        logger.LogInformation("Database seeded successfully.");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "An error occurred during database initialization/seeding.");
+        await dbInitializer.InitializeAsync();
     }
 }
 
 app.Run();
+
+// ==============================================================================
+// INFRASTRUCTURE DYNAMIC REGISTRATION (Decoupled from API compile-time references)
+// ==============================================================================
+static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
+{
+    var assemblyPath = Path.Combine(AppContext.BaseDirectory, "HospitalManagement.Infrastructure.dll");
+    var assembly = File.Exists(assemblyPath)
+        ? Assembly.LoadFrom(assemblyPath)
+        : Assembly.Load("HospitalManagement.Infrastructure");
+
+    var diType = assembly.GetType("HospitalManagement.Infrastructure.DependencyInjection")
+        ?? throw new InvalidOperationException("DependencyInjection class not found in HospitalManagement.Infrastructure.");
+
+    var method = diType.GetMethod("AddInfrastructure", BindingFlags.Public | BindingFlags.Static)
+        ?? throw new InvalidOperationException("AddInfrastructure method not found in HospitalManagement.Infrastructure.DependencyInjection.");
+
+    method.Invoke(null, new object[] { services, configuration });
+}
